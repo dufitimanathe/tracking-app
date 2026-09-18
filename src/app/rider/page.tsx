@@ -4,19 +4,133 @@ import { Button } from "@/components/ui/button";
 import { Card, MetricCard } from "@/components/ui/card";
 import { Modal } from "@/components/ui/overlay";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { motorcycles, trips } from "@/data/mock";
-import { formatKm, greetingForHour } from "@/lib/utils";
+import { mapAvailability, mapRiderMeMotorcycle, mapTrip } from "@/lib/api/mappers";
+import {
+  acceptTrip,
+  declineTrip,
+  fetchRiderMe,
+  fetchTrips,
+  updateRiderAvailability,
+  type RiderMeDto,
+} from "@/lib/api/resources";
+import { formatKm, formatRwf, greetingForHour } from "@/lib/utils";
 import { useAppSelector } from "@/store";
+import type { Motorcycle, Trip } from "@/types";
 import { Bike, MapPin, Navigation, Power, Route } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export default function RiderHomePage() {
-  const { userName } = useAppSelector((s) => s.auth);
-  const moto = motorcycles.find((m) => m.plate === "RAE 428C") ?? motorcycles[0];
-  const activeTrip = trips.find((t) => t.id === "TRIP-2379");
-  const [online, setOnline] = useState(true);
-  const [assignmentOpen, setAssignmentOpen] = useState(true);
+  const { userName, companyId } = useAppSelector((s) => s.auth);
+  const [me, setMe] = useState<RiderMeDto | null>(null);
+  const [moto, setMoto] = useState<Motorcycle | null>(null);
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [rawTrips, setRawTrips] = useState<
+    Array<{ id: string; status: string; pickupAddress: string; destinationAddress: string; employeeName?: string | null; estimatedDistanceKm?: string | null; estimatedPrice?: string | null }>
+  >([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [assignmentOpen, setAssignmentOpen] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!companyId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [rider, tripResult] = await Promise.all([
+        fetchRiderMe(companyId),
+        fetchTrips(companyId, { limit: 30, sort: "createdAt:DESC" }),
+      ]);
+      setMe(rider);
+      setMoto(mapRiderMeMotorcycle(rider));
+      setRawTrips(tripResult.items);
+      setTrips(tripResult.items.map(mapTrip));
+      const pending = tripResult.items.find((t) =>
+        ["RIDER_ASSIGNED"].includes(t.status.toUpperCase()),
+      );
+      setAssignmentOpen(Boolean(pending));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load rider home");
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const online = me
+    ? !["OFFLINE", "SUSPENDED"].includes(me.availabilityStatus.toUpperCase())
+    : false;
+
+  const activeTrip = useMemo(
+    () =>
+      trips.find((t) =>
+        ["in_progress", "to_pickup", "waiting", "assigned"].includes(t.status),
+      ) ?? null,
+    [trips],
+  );
+
+  const pendingAssignment = useMemo(
+    () => rawTrips.find((t) => t.status.toUpperCase() === "RIDER_ASSIGNED"),
+    [rawTrips],
+  );
+
+  const completedToday = useMemo(() => {
+    return trips.filter((t) => t.status === "completed").length;
+  }, [trips]);
+
+  async function setAvailability(next: "AVAILABLE" | "OFFLINE") {
+    if (!companyId || !me) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await updateRiderAvailability(companyId, me.id, next);
+      setMe({ ...me, ...updated });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Availability update failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onAccept() {
+    if (!companyId || !pendingAssignment) return;
+    setBusy(true);
+    try {
+      await acceptTrip(companyId, pendingAssignment.id);
+      setAssignmentOpen(false);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Accept failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDecline() {
+    if (!companyId || !pendingAssignment) return;
+    setBusy(true);
+    try {
+      await declineTrip(companyId, pendingAssignment.id);
+      setAssignmentOpen(false);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Decline failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-lg py-16 text-center text-sm text-text-muted">
+        Loading…
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-lg space-y-4">
@@ -29,6 +143,10 @@ export default function RiderHomePage() {
         </h1>
       </div>
 
+      {error ? (
+        <p className="text-sm text-danger bg-danger-soft rounded-[8px] px-3 py-2">{error}</p>
+      ) : null}
+
       <Card padding="md">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -36,23 +154,28 @@ export default function RiderHomePage() {
               <Bike className="size-5" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-text">{moto.plate}</p>
+              <p className="text-sm font-semibold text-text">
+                {moto?.plate ?? "No motorcycle assigned"}
+              </p>
               <p className="text-xs text-text-muted mt-0.5">
-                {moto.fleetNumber} · {moto.brand} {moto.model}
+                {moto
+                  ? `${moto.fleetNumber} · ${moto.brand} ${moto.model}`
+                  : "Assign a unit before going online"}
               </p>
             </div>
           </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <StatusBadge status={online ? "online" : "offline"} />
-          <StatusBadge
-            status={online ? "available" : "offline"}
-            label={online ? "Available" : "Offline"}
-          />
-          <StatusBadge
-            status={moto.gpsStatus === "online" ? "online" : "gps_offline"}
-            label={moto.gpsStatus === "online" ? "GPS Connected" : "GPS Offline"}
-          />
+          {me ? (
+            <StatusBadge status={mapAvailability(me.availabilityStatus)} />
+          ) : null}
+          {moto ? (
+            <StatusBadge
+              status={moto.gpsStatus === "online" ? "online" : "gps_offline"}
+              label={moto.gpsStatus === "online" ? "GPS Connected" : "GPS Offline"}
+            />
+          ) : null}
         </div>
       </Card>
 
@@ -60,9 +183,9 @@ export default function RiderHomePage() {
         <Button
           size="lg"
           fullWidth
-          disabled={online}
+          disabled={busy || online}
           leftIcon={<Power className="size-4" />}
-          onClick={() => setOnline(true)}
+          onClick={() => void setAvailability("AVAILABLE")}
         >
           Go Online
         </Button>
@@ -70,9 +193,9 @@ export default function RiderHomePage() {
           size="lg"
           fullWidth
           variant="secondary"
-          disabled={!online}
+          disabled={busy || !online}
           leftIcon={<Power className="size-4" />}
-          onClick={() => setOnline(false)}
+          onClick={() => void setAvailability("OFFLINE")}
         >
           Go Offline
         </Button>
@@ -85,22 +208,19 @@ export default function RiderHomePage() {
               <p className="text-xs font-semibold uppercase tracking-wide text-primary">
                 Current trip
               </p>
-              <p className="text-sm font-semibold text-text mt-1">{activeTrip.id}</p>
+              <p className="text-sm font-semibold text-text mt-1">
+                {activeTrip.id.slice(0, 8)}
+              </p>
             </div>
             <StatusBadge status={activeTrip.status} />
           </div>
-          <p className="mt-2 text-sm text-text-secondary">
-            {activeTrip.employeeName}
-          </p>
+          <p className="mt-2 text-sm text-text-secondary">{activeTrip.employeeName}</p>
           <p className="mt-1 text-sm text-text">
             {activeTrip.pickup} → {activeTrip.destination}
           </p>
           <div className="mt-3 flex flex-wrap gap-3 text-xs text-text-muted">
             {activeTrip.etaMin != null ? <span>ETA {activeTrip.etaMin} min</span> : null}
             <span>{formatKm(activeTrip.distanceKm)}</span>
-            {activeTrip.currentSpeed != null ? (
-              <span>{activeTrip.currentSpeed} km/h</span>
-            ) : null}
           </div>
           <Link href="/rider/active" className="mt-4 block">
             <Button fullWidth leftIcon={<Navigation className="size-4" />}>
@@ -111,16 +231,16 @@ export default function RiderHomePage() {
       ) : null}
 
       <div className="grid grid-cols-3 gap-3">
-        <MetricCard label="Trips Today" value={moto.tripsToday} className="!p-3" />
+        <MetricCard label="Active" value={activeTrip ? 1 : 0} className="!p-3" />
         <MetricCard
           label="Completed"
-          value={3}
+          value={completedToday}
           accent="success"
           className="!p-3"
         />
         <MetricCard
           label="Distance"
-          value={formatKm(moto.distanceTodayKm)}
+          value={formatKm(moto?.distanceTodayKm ?? 0)}
           icon={<Route className="size-3.5" />}
           className="!p-3"
         />
@@ -129,47 +249,45 @@ export default function RiderHomePage() {
       <Card padding="md">
         <div className="flex items-center gap-2 text-sm text-text-secondary">
           <MapPin className="size-4 text-text-muted" />
-          Current area: {moto.location}
+          Current area: {moto?.location ?? "No fix"}
         </div>
-        <Link
-          href="/rider/map"
-          className="mt-3 inline-block text-xs font-medium text-primary"
-        >
+        <Link href="/rider/map" className="mt-3 inline-block text-xs font-medium text-primary">
           Open map
         </Link>
       </Card>
 
       <Modal
-        open={assignmentOpen && online}
+        open={assignmentOpen && Boolean(pendingAssignment)}
         onClose={() => setAssignmentOpen(false)}
         title="New trip assignment"
-        description="REQ-2841 · Alice Uwimana"
+        description={pendingAssignment?.employeeName ?? "Incoming request"}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setAssignmentOpen(false)}>
+            <Button variant="secondary" disabled={busy} onClick={() => void onDecline()}>
               Decline
             </Button>
-            <Button
-              onClick={() => {
-                setAssignmentOpen(false);
-              }}
-            >
+            <Button disabled={busy} onClick={() => void onAccept()}>
               Accept
             </Button>
           </>
         }
       >
-        <div className="space-y-2 text-sm">
-          <p className="text-text">
-            <span className="text-text-muted">Pickup:</span> Kicukiro
-          </p>
-          <p className="text-text">
-            <span className="text-text-muted">Destination:</span> Remera
-          </p>
-          <p className="text-text-secondary text-xs pt-1">
-            Est. 6.3 km · ~2,620 RWF · Requested for 8:00 AM
-          </p>
-        </div>
+        {pendingAssignment ? (
+          <div className="space-y-2 text-sm">
+            <p className="text-text">
+              <span className="text-text-muted">Pickup:</span>{" "}
+              {pendingAssignment.pickupAddress}
+            </p>
+            <p className="text-text">
+              <span className="text-text-muted">Destination:</span>{" "}
+              {pendingAssignment.destinationAddress}
+            </p>
+            <p className="text-text-secondary text-xs pt-1">
+              Est. {formatKm(Number(pendingAssignment.estimatedDistanceKm ?? 0))} ·{" "}
+              {formatRwf(Number(pendingAssignment.estimatedPrice ?? 0))}
+            </p>
+          </div>
+        ) : null}
       </Modal>
     </div>
   );

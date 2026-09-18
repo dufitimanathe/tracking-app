@@ -6,31 +6,73 @@ import { Card, MetricCard } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { Avatar, Timeline } from "@/components/ui/overlay";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { motorcycles, trips } from "@/data/mock";
+import { fetchLiveFleet, fleetLiveToMotorcycle } from "@/lib/api/locations";
+import { mapTrip } from "@/lib/api/mappers";
+import { cancelTrip, fetchTrip } from "@/lib/api/resources";
 import { calculateFare, formatKm, formatRwf, initials } from "@/lib/utils";
-import { ArrowLeft, Clock, Gauge, MapPin } from "lucide-react";
+import { useAppSelector } from "@/store";
+import type { Motorcycle, Trip } from "@/types";
+import { ArrowLeft, Clock, MapPin } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export default function TripDetailPage() {
   const params = useParams<{ id: string }>();
-  const trip = trips.find((t) => t.id === params.id);
+  const companyId = useAppSelector((s) => s.auth.companyId);
+  const [trip, setTrip] = useState<Trip | null>(null);
+  const [bike, setBike] = useState<Motorcycle | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
-  const bike = useMemo(() => {
-    if (!trip) return null;
+  const load = useCallback(async () => {
+    if (!companyId || !params.id) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const dto = await fetchTrip(companyId, params.id);
+      setTrip(mapTrip(dto));
+      if (dto.motorcycleId) {
+        try {
+          const fleet = await fetchLiveFleet(companyId);
+          const live = fleet.find((f) => f.motorcycleId === dto.motorcycleId);
+          if (live) setBike(fleetLiveToMotorcycle(live));
+        } catch {
+          setBike(null);
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load trip");
+      setTrip(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId, params.id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const fare = useMemo(
+    () => (trip ? calculateFare(trip.distanceKm) : null),
+    [trip],
+  );
+
+  if (loading) {
     return (
-      motorcycles.find((m) => m.plate === trip.motorcyclePlate) ??
-      motorcycles[0]
+      <div className="max-w-[1400px] mx-auto py-16 text-center text-sm text-text-muted">
+        Loading trip…
+      </div>
     );
-  }, [trip]);
+  }
 
   if (!trip) {
     return (
       <div className="max-w-[1400px] mx-auto py-16 text-center space-y-3">
         <h1 className="text-xl font-semibold text-text">Trip not found</h1>
         <p className="text-sm text-text-secondary">
-          No trip matches <span className="font-medium">{params.id}</span>.
+          {error ?? `No trip matches ${params.id}.`}
         </p>
         <Link
           href="/admin/trips"
@@ -42,7 +84,6 @@ export default function TripDetailPage() {
     );
   }
 
-  const fare = calculateFare(trip.distanceKm);
   const isLive =
     trip.status === "in_progress" ||
     trip.status === "to_pickup" ||
@@ -64,7 +105,7 @@ export default function TripDetailPage() {
     },
     {
       label: "En route to pickup",
-      time: trip.status === "to_pickup" ? "In progress" : trip.pickupAt ? undefined : undefined,
+      time: trip.status === "to_pickup" ? "In progress" : undefined,
       done:
         trip.status === "waiting" ||
         trip.status === "in_progress" ||
@@ -101,10 +142,23 @@ export default function TripDetailPage() {
     });
   }
 
+  async function onCancel() {
+    if (!companyId || !trip) return;
+    setCancelling(true);
+    try {
+      await cancelTrip(companyId, trip.id, "Cancelled by admin");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Cancel failed");
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   return (
     <div className="space-y-4 sm:space-y-5 max-w-[1400px] mx-auto">
       <PageHeader
-        title={trip.id}
+        title={trip.id.slice(0, 8)}
         description={`${trip.pickup} → ${trip.destination}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -120,6 +174,10 @@ export default function TripDetailPage() {
         }
       />
 
+      {error ? (
+        <p className="text-sm text-danger bg-danger-soft rounded-[8px] px-3 py-2">{error}</p>
+      ) : null}
+
       {(isLive || trip.etaMin != null) && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {trip.etaMin != null ? (
@@ -128,13 +186,6 @@ export default function TripDetailPage() {
               value={`${trip.etaMin} min`}
               accent="primary"
               icon={<Clock className="size-4" />}
-            />
-          ) : null}
-          {trip.currentSpeed != null ? (
-            <MetricCard
-              label="Speed"
-              value={`${trip.currentSpeed} km/h`}
-              icon={<Gauge className="size-4" />}
             />
           ) : null}
           <MetricCard
@@ -166,15 +217,11 @@ export default function TripDetailPage() {
 
         <div className="lg:col-span-2 space-y-4">
           <Card>
-            <h2 className="text-sm font-semibold text-text mb-4">
-              Trip details
-            </h2>
+            <h2 className="text-sm font-semibold text-text mb-4">Trip details</h2>
             <div className="flex items-center gap-3 mb-4">
               <Avatar initials={initials(trip.employeeName)} />
               <div className="min-w-0">
-                <p className="text-sm font-medium text-text">
-                  {trip.employeeName}
-                </p>
+                <p className="text-sm font-medium text-text">{trip.employeeName}</p>
                 <p className="text-xs text-text-secondary">
                   {trip.employeePhone ?? "No phone on file"}
                 </p>
@@ -186,13 +233,10 @@ export default function TripDetailPage() {
               <DetailRow label="Pickup" value={trip.pickup} />
               <DetailRow label="Destination" value={trip.destination} />
               {trip.durationMin != null ? (
-                <DetailRow
-                  label="Duration"
-                  value={`${trip.durationMin} min`}
-                />
+                <DetailRow label="Duration" value={`${trip.durationMin} min`} />
               ) : null}
               {trip.requestId ? (
-                <DetailRow label="Request" value={trip.requestId} />
+                <DetailRow label="Request" value={trip.requestId.slice(0, 8)} />
               ) : null}
             </dl>
           </Card>
@@ -202,20 +246,16 @@ export default function TripDetailPage() {
             <Timeline steps={timeline} />
           </Card>
 
-          {isCompleted ? (
+          {isCompleted && fare ? (
             <Card>
-              <h2 className="text-sm font-semibold text-text mb-3">
-                Fare breakdown
-              </h2>
+              <h2 className="text-sm font-semibold text-text mb-3">Fare breakdown</h2>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between text-text-secondary">
                   <span>First km</span>
                   <span>{formatRwf(fare.firstKm > 0 ? 500 : 0)}</span>
                 </div>
                 <div className="flex justify-between text-text-secondary">
-                  <span>
-                    Remaining ({formatKm(fare.remainingKm)} × 400)
-                  </span>
+                  <span>Remaining ({formatKm(fare.remainingKm)} × 400)</span>
                   <span>{formatRwf(fare.remainingCost)}</span>
                 </div>
                 <div className="flex justify-between border-t border-border pt-2 font-semibold text-text">
@@ -228,11 +268,13 @@ export default function TripDetailPage() {
 
           {isLive ? (
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" size="sm">
-                Contact rider
-              </Button>
-              <Button variant="danger-outline" size="sm">
-                Cancel trip
+              <Button
+                variant="danger-outline"
+                size="sm"
+                disabled={cancelling}
+                onClick={() => void onCancel()}
+              >
+                {cancelling ? "Cancelling…" : "Cancel trip"}
               </Button>
             </div>
           ) : null}

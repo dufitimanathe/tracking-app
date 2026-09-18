@@ -3,8 +3,18 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
+import {
+  companyInitials,
+  displayName,
+  fetchMe,
+  initialsOf,
+  loginRequest,
+  persistAuth,
+  pickMembership,
+} from "@/lib/api/auth";
+import { homeForRole } from "@/lib/navigation";
 import { useAppDispatch } from "@/store";
-import { login, setRole } from "@/store/slices/auth-slice";
+import { setSession } from "@/store/slices/auth-slice";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -12,14 +22,43 @@ import { useState } from "react";
 export default function LoginPage() {
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const [email, setEmail] = useState("admin@virunga.rw");
-  const [password, setPassword] = useState("••••••••");
+  const [email, setEmail] = useState("theodufi.rw@gmail.com");
+  const [password, setPassword] = useState("Password123!");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    dispatch(login());
-    dispatch(setRole("COMPANY_ADMIN"));
-    router.push("/admin");
+    setLoading(true);
+    setError(null);
+    try {
+      const auth = await loginRequest({ email, password });
+      persistAuth(auth);
+      const me = await fetchMe();
+      const membership = pickMembership(me.memberships);
+      if (!membership) {
+        throw new Error("No active company membership for this account.");
+      }
+      persistAuth(auth, membership.companyId);
+      dispatch(
+        setSession({
+          userId: me.user.id,
+          userName: displayName(me.user),
+          userEmail: me.user.email ?? email,
+          avatarInitials: initialsOf(me.user),
+          role: membership.role,
+          companyId: membership.companyId,
+          companyName: membership.companyName,
+          companyInitials: companyInitials(membership.companyName),
+          membershipId: membership.id,
+        }),
+      );
+      router.replace(homeForRole(membership.role));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -31,11 +70,9 @@ export default function LoginPage() {
 
         <Card className="shadow-[var(--shadow-soft)]" padding="lg">
           <div className="mb-6">
-            <h1 className="text-xl font-semibold text-text tracking-tight">
-              Sign in
-            </h1>
+            <h1 className="text-xl font-semibold text-text tracking-tight">Sign in</h1>
             <p className="mt-1 text-sm text-text-secondary">
-              Virunga Transport workspace
+              Connect to your Nest API workspace
             </p>
           </div>
 
@@ -60,6 +97,14 @@ export default function LoginPage() {
               />
             </Field>
 
+            {error ? (
+              <p className="text-sm text-danger bg-danger-soft rounded-[8px] px-3 py-2">{error}</p>
+            ) : (
+              <p className="text-xs text-text-muted">
+                Seed: theodufi.rw@gmail.com / Password123!
+              </p>
+            )}
+
             <div className="flex justify-end">
               <Link
                 href="/forgot-password"
@@ -69,8 +114,8 @@ export default function LoginPage() {
               </Link>
             </div>
 
-            <Button type="submit" fullWidth size="lg">
-              Login
+            <Button type="submit" fullWidth size="lg" disabled={loading}>
+              {loading ? "Signing in…" : "Login"}
             </Button>
           </form>
 

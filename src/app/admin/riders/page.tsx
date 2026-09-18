@@ -1,189 +1,556 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import { Card, MetricCard } from "@/components/ui/card";
-import { SearchInput } from "@/components/ui/input";
-import { PageHeader } from "@/components/ui/page-header";
+import { Field, Input, SearchInput } from "@/components/ui/input";
+import { Pagination } from "@/components/ui/pagination";
+import { EmptyState, PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Avatar } from "@/components/ui/overlay";
-import { riders } from "@/data/mock";
-import { initials } from "@/lib/utils";
-import { UserRound, Users } from "lucide-react";
+import { Modal } from "@/components/ui/overlay";
+import {
+  createRider,
+  deactivateRider,
+  deleteRider,
+  fetchRiders,
+  markRiderUnavailable,
+  updateRider,
+  type RiderDto,
+} from "@/lib/api/resources";
+import { useAppSelector } from "@/store";
+import { Bike, MoreHorizontal, Phone, Plus, Smartphone, Users } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+
+type ConfirmAction = "deactivate" | "delete" | "unavailable";
+
+interface ConfirmState {
+  action: ConfirmAction;
+  rider: RiderDto;
+}
+
+const CONFIRM_COPY: Record<
+  ConfirmAction,
+  { title: string; description: (name: string) => string; confirmLabel: string }
+> = {
+  deactivate: {
+    title: "Deactivate rider?",
+    description: (name) =>
+      `${name} will be suspended and removed from assignment. They can be reactivated later.`,
+    confirmLabel: "Deactivate",
+  },
+  delete: {
+    title: "Delete rider?",
+    description: (name) =>
+      `${name} will be removed from this company. Trip history is kept, but they will no longer appear in the riders list.`,
+    confirmLabel: "Delete",
+  },
+  unavailable: {
+    title: "Mark unavailable?",
+    description: (name) =>
+      `${name} will be marked offline and will not receive new trip assignments until they go available again.`,
+    confirmLabel: "Mark unavailable",
+  },
+};
+
+function riderDisplayName(r: RiderDto) {
+  return r.firstName || r.lastName
+    ? `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim()
+    : r.phone;
+}
 
 export default function RidersPage() {
-  const [query, setQuery] = useState("");
+  const companyId = useAppSelector((s) => s.auth.companyId);
+  const hydrated = useAppSelector((s) => s.auth.hydrated);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [items, setItems] = useState<RiderDto[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editRider, setEditRider] = useState<RiderDto | null>(null);
+  const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
-  const kpis = useMemo(() => {
-    const total = riders.length;
-    const available = riders.filter((r) => r.availability === "available").length;
-    const onTrip = riders.filter(
-      (r) => r.availability === "on_trip" || r.availability === "to_pickup",
-    ).length;
-    const offline = riders.filter((r) => r.availability === "offline").length;
-    const suspended = riders.filter((r) => r.availability === "suspended").length;
-    return { total, available, onTrip, offline, suspended };
+  const [form, setForm] = useState({
+    firstName: "",
+    lastName: "",
+    phone: "",
+    email: "",
+    licenseNumber: "",
+  });
+
+  const load = useCallback(async () => {
+    if (!hydrated || !companyId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await fetchRiders(companyId, {
+        page,
+        limit: 20,
+        search: search || undefined,
+        sort: "createdAt:DESC",
+      });
+      setItems(result.items);
+      setTotal(result.meta.total);
+      setTotalPages(result.meta.totalPages || 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load riders");
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId, hydrated, page, search]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!menuRef.current?.contains(e.target as Node)) {
+        setMenuOpenId(null);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return riders;
-    return riders.filter(
-      (r) =>
-        r.name.toLowerCase().includes(q) ||
-        r.phone.toLowerCase().includes(q) ||
-        r.motorcyclePlate?.toLowerCase().includes(q) ||
-        r.location.toLowerCase().includes(q),
-    );
-  }, [query]);
+  function openAdd() {
+    setForm({
+      firstName: "",
+      lastName: "",
+      phone: "",
+      email: "",
+      licenseNumber: "",
+    });
+    setTempPassword(null);
+    setAddOpen(true);
+  }
+
+  function openEdit(rider: RiderDto) {
+    setEditRider(rider);
+    setForm({
+      firstName: rider.firstName ?? "",
+      lastName: rider.lastName ?? "",
+      phone: rider.phone,
+      email: "",
+      licenseNumber: rider.licenseNumber ?? "",
+    });
+    setMenuOpenId(null);
+  }
+
+  async function onCreate(e: FormEvent) {
+    e.preventDefault();
+    if (!companyId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await createRider(companyId, {
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        phone: form.phone.trim(),
+        email: form.email.trim() || undefined,
+        licenseNumber: form.licenseNumber.trim() || undefined,
+      });
+      if (created.temporaryPassword) {
+        setTempPassword(created.temporaryPassword);
+      } else {
+        setAddOpen(false);
+      }
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add rider");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onUpdate(e: FormEvent) {
+    e.preventDefault();
+    if (!companyId || !editRider) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await updateRider(companyId, editRider.id, {
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        phone: form.phone.trim(),
+        licenseNumber: form.licenseNumber.trim() || null,
+      });
+      setEditRider(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update rider");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runConfirm() {
+    if (!companyId || !confirm) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { action, rider } = confirm;
+      if (action === "deactivate") await deactivateRider(companyId, rider.id);
+      if (action === "delete") await deleteRider(companyId, rider.id);
+      if (action === "unavailable") await markRiderUnavailable(companyId, rider.id);
+      setConfirm(null);
+      setMenuOpenId(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const availableCount = items.filter((r) => r.availabilityStatus === "AVAILABLE").length;
 
   return (
-    <div className="space-y-5 sm:space-y-6 max-w-[1400px] mx-auto">
+    <div className="space-y-4 sm:space-y-5 max-w-[1400px] mx-auto">
       <PageHeader
         title="Riders"
-        description="Manage rider availability, assignments, and performance."
+        description="Manage rider profiles. Location is tracked from each rider’s phone — hardware GPS is not required."
+        actions={
+          <Button size="sm" leftIcon={<Plus className="size-3.5" />} onClick={openAdd}>
+            Add rider
+          </Button>
+        }
       />
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-        <MetricCard label="Total" value={kpis.total} icon={<Users className="size-4" />} />
+      <div className="flex items-start gap-2 rounded-[10px] border border-border bg-primary-soft/40 px-3 py-2.5 text-sm text-text-secondary">
+        <Smartphone className="size-4 mt-0.5 shrink-0 text-primary" />
+        <p>
+          Phone tracking is active for this company. Riders share location from the mobile app
+          after they are assigned a motorcycle unit.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 max-w-md">
+        <MetricCard label="Total" value={total} icon={<Users className="size-4" />} />
         <MetricCard
-          label="Available"
-          value={kpis.available}
+          label="Available (page)"
+          value={availableCount}
           accent="success"
-          hint="Ready to assign"
-        />
-        <MetricCard
-          label="On Trip"
-          value={kpis.onTrip}
-          accent="primary"
-          hint="Active assignments"
-        />
-        <MetricCard label="Offline" value={kpis.offline} hint="Not connected" />
-        <MetricCard
-          label="Suspended"
-          value={kpis.suspended}
-          accent="danger"
-          hint="Restricted"
-          className="col-span-2 sm:col-span-1"
+          icon={<Bike className="size-4" />}
         />
       </div>
 
+      <SearchInput
+        placeholder="Search riders…"
+        value={search}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setPage(1);
+        }}
+        className="max-w-md"
+      />
+
+      {error ? (
+        <p className="text-sm text-danger bg-danger-soft rounded-[8px] px-3 py-2">{error}</p>
+      ) : null}
+
       <Card padding="none" className="overflow-hidden">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-b border-border">
-          <div>
-            <h2 className="text-base font-semibold text-text">All riders</h2>
-            <p className="text-xs text-text-muted mt-0.5">
-              {filtered.length} of {riders.length} shown
-            </p>
-          </div>
-          <SearchInput
-            placeholder="Search name, phone, plate…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="w-full sm:w-72"
+        {loading ? (
+          <EmptyState title="Loading riders…" />
+        ) : items.length === 0 ? (
+          <EmptyState
+            title="No riders"
+            description="Add your first rider to start phone-based tracking and assignments."
+            action={
+              <Button size="sm" leftIcon={<Plus className="size-3.5" />} onClick={openAdd}>
+                Add rider
+              </Button>
+            }
           />
-        </div>
-
-        {/* Mobile cards */}
-        <ul className="md:hidden divide-y divide-border">
-          {filtered.map((rider) => (
-            <li key={rider.id} className="p-4">
-              <div className="flex items-start gap-3">
-                <Avatar initials={initials(rider.name)} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold text-text">{rider.name}</p>
-                      <p className="text-xs text-text-secondary mt-0.5">{rider.phone}</p>
-                    </div>
-                    <StatusBadge status={rider.availability} />
-                  </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-text-secondary">
-                    <span>{rider.motorcyclePlate ?? "Unassigned"}</span>
-                    <span>{rider.location}</span>
-                    <span>{rider.tripsToday} trips today</span>
-                    <span>{rider.rating.toFixed(1)} ★</span>
-                  </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {items.map((r) => {
+              const name = riderDisplayName(r);
+              return (
+                <li key={r.id} className="relative flex items-center gap-2 px-4 py-3">
                   <Link
-                    href={`/admin/riders/${rider.id}`}
-                    className="mt-3 inline-flex text-xs font-medium text-primary"
+                    href={`/admin/riders/${r.id}`}
+                    className="min-w-0 flex-1 hover:opacity-90"
                   >
-                    View profile
+                    <p className="text-sm font-semibold text-text">{name}</p>
+                    <p className="text-xs text-text-secondary inline-flex items-center gap-1.5">
+                      <Phone className="size-3" />
+                      {r.phone}
+                      <span>·</span>
+                      {r.licenseNumber ?? "No license on file"}
+                    </p>
                   </Link>
-                </div>
-              </div>
-            </li>
-          ))}
-          {filtered.length === 0 ? (
-            <li className="px-4 py-10 text-center text-sm text-text-muted">
-              No riders match your search.
-            </li>
-          ) : null}
-        </ul>
-
-        {/* Desktop table */}
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-surface-muted/50 text-left text-xs uppercase tracking-wide text-text-muted">
-                <th className="px-4 py-3 font-medium">Rider</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Motorcycle</th>
-                <th className="px-4 py-3 font-medium">Location</th>
-                <th className="px-4 py-3 font-medium">Trips</th>
-                <th className="px-4 py-3 font-medium">Rating</th>
-                <th className="px-4 py-3 font-medium">Last active</th>
-                <th className="px-4 py-3 font-medium" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {filtered.map((rider) => (
-                <tr key={rider.id} className="hover:bg-surface-muted/40 transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <Avatar initials={initials(rider.name)} size="sm" />
-                      <div>
-                        <p className="font-medium text-text">{rider.name}</p>
-                        <p className="text-xs text-text-muted">{rider.phone}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={rider.availability} />
-                  </td>
-                  <td className="px-4 py-3 text-text-secondary">
-                    {rider.motorcyclePlate ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-text-secondary">{rider.location}</td>
-                  <td className="px-4 py-3 text-text-secondary">{rider.tripsToday}</td>
-                  <td className="px-4 py-3 text-text-secondary">
-                    {rider.rating.toFixed(1)}
-                  </td>
-                  <td className="px-4 py-3 text-text-muted">{rider.lastActive}</td>
-                  <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/admin/riders/${rider.id}`}
-                      className="text-xs font-medium text-primary hover:underline"
+                  <div className="flex items-center gap-2 shrink-0">
+                    <StatusBadge
+                      status={
+                        r.availabilityStatus === "AVAILABLE"
+                          ? "available"
+                          : r.availabilityStatus === "OFFLINE"
+                            ? "offline"
+                            : "on_trip"
+                      }
+                      label={r.availabilityStatus.toLowerCase()}
+                    />
+                    <StatusBadge
+                      status={r.status === "ACTIVE" ? "online" : "offline"}
+                      label={r.status.toLowerCase()}
+                    />
+                    <div
+                      className="relative"
+                      ref={menuOpenId === r.id ? menuRef : undefined}
                     >
-                      View
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-text-muted">
-                    <div className="inline-flex flex-col items-center gap-2">
-                      <UserRound className="size-5 text-text-muted" />
-                      No riders match your search.
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        aria-label={`Manage ${name}`}
+                        onClick={() =>
+                          setMenuOpenId((id) => (id === r.id ? null : r.id))
+                        }
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </Button>
+                      {menuOpenId === r.id ? (
+                        <div className="absolute right-0 z-20 mt-1 w-52 rounded-[10px] border border-border bg-surface py-1 shadow-[var(--shadow-overlay)]">
+                          <button
+                            type="button"
+                            className="w-full px-3 py-2 text-left text-sm text-text hover:bg-surface-muted"
+                            onClick={() => openEdit(r)}
+                          >
+                            Edit profile
+                          </button>
+                          <button
+                            type="button"
+                            className="w-full px-3 py-2 text-left text-sm text-text hover:bg-surface-muted disabled:opacity-40"
+                            disabled={
+                              r.availabilityStatus === "OFFLINE" ||
+                              r.status !== "ACTIVE"
+                            }
+                            onClick={() => {
+                              setConfirm({ action: "unavailable", rider: r });
+                              setMenuOpenId(null);
+                            }}
+                          >
+                            Mark unavailable
+                          </button>
+                          <button
+                            type="button"
+                            className="w-full px-3 py-2 text-left text-sm text-text hover:bg-surface-muted disabled:opacity-40"
+                            disabled={r.status !== "ACTIVE"}
+                            onClick={() => {
+                              setConfirm({ action: "deactivate", rider: r });
+                              setMenuOpenId(null);
+                            }}
+                          >
+                            Deactivate
+                          </button>
+                          <button
+                            type="button"
+                            className="w-full px-3 py-2 text-left text-sm text-danger hover:bg-danger-soft"
+                            onClick={() => {
+                              setConfirm({ action: "delete", rider: r });
+                              setMenuOpenId(null);
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <div className="border-t border-border px-4 py-3">
+          <Pagination page={page} totalPages={totalPages} total={total} onPageChange={setPage} />
         </div>
       </Card>
+
+      <Modal
+        open={addOpen}
+        onClose={() => {
+          if (!busy) {
+            setAddOpen(false);
+            setTempPassword(null);
+          }
+        }}
+        title="Add rider"
+        description="Create a rider profile. Location will come from their phone once they use the rider app."
+        footer={
+          tempPassword ? (
+            <Button
+              onClick={() => {
+                setAddOpen(false);
+                setTempPassword(null);
+              }}
+            >
+              Done
+            </Button>
+          ) : (
+            <>
+              <Button variant="secondary" disabled={busy} onClick={() => setAddOpen(false)}>
+                Cancel
+              </Button>
+              <Button form="add-rider-form" type="submit" disabled={busy}>
+                {busy ? "Saving…" : "Add rider"}
+              </Button>
+            </>
+          )
+        }
+      >
+        {tempPassword ? (
+          <div className="space-y-2">
+            <p className="text-sm text-text-secondary">
+              Rider created. Share this temporary password so they can sign in:
+            </p>
+            <p className="rounded-[8px] bg-surface-muted px-3 py-2 font-mono text-sm text-text break-all">
+              {tempPassword}
+            </p>
+          </div>
+        ) : (
+          <form id="add-rider-form" className="space-y-3" onSubmit={onCreate}>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="First name">
+                <Input
+                  required
+                  value={form.firstName}
+                  onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))}
+                />
+              </Field>
+              <Field label="Last name">
+                <Input
+                  required
+                  value={form.lastName}
+                  onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))}
+                />
+              </Field>
+            </div>
+            <Field label="Phone" hint="Used for login and phone tracking">
+              <Input
+                required
+                type="tel"
+                placeholder="+250788000000"
+                value={form.phone}
+                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+              />
+            </Field>
+            <Field label="Email" hint="Optional">
+              <Input
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+              />
+            </Field>
+            <Field label="License number" hint="Optional">
+              <Input
+                value={form.licenseNumber}
+                onChange={(e) => setForm((f) => ({ ...f, licenseNumber: e.target.value }))}
+              />
+            </Field>
+          </form>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!editRider}
+        onClose={() => {
+          if (!busy) setEditRider(null);
+        }}
+        title="Edit rider"
+        description="Update contact details used for phone tracking and assignment."
+        footer={
+          <>
+            <Button variant="secondary" disabled={busy} onClick={() => setEditRider(null)}>
+              Cancel
+            </Button>
+            <Button form="edit-rider-form" type="submit" disabled={busy}>
+              {busy ? "Saving…" : "Save changes"}
+            </Button>
+          </>
+        }
+      >
+        <form id="edit-rider-form" className="space-y-3" onSubmit={onUpdate}>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="First name">
+              <Input
+                required
+                value={form.firstName}
+                onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))}
+              />
+            </Field>
+            <Field label="Last name">
+              <Input
+                required
+                value={form.lastName}
+                onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))}
+              />
+            </Field>
+          </div>
+          <Field label="Phone">
+            <Input
+              required
+              type="tel"
+              value={form.phone}
+              onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+            />
+          </Field>
+          <Field label="License number">
+            <Input
+              value={form.licenseNumber}
+              onChange={(e) => setForm((f) => ({ ...f, licenseNumber: e.target.value }))}
+            />
+          </Field>
+        </form>
+      </Modal>
+
+      <Modal
+        open={!!confirm}
+        onClose={() => {
+          if (!busy) setConfirm(null);
+        }}
+        title={confirm ? CONFIRM_COPY[confirm.action].title : ""}
+        description={
+          confirm
+            ? CONFIRM_COPY[confirm.action].description(riderDisplayName(confirm.rider))
+            : undefined
+        }
+        footer={
+          <>
+            <Button variant="secondary" disabled={busy} onClick={() => setConfirm(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant={confirm?.action === "delete" ? "danger" : "primary"}
+              disabled={busy}
+              onClick={() => void runConfirm()}
+            >
+              {busy
+                ? "Working…"
+                : confirm
+                  ? CONFIRM_COPY[confirm.action].confirmLabel
+                  : "Confirm"}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-text-secondary">
+          This action requires confirmation before it is applied.
+        </p>
+      </Modal>
     </div>
   );
 }

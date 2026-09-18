@@ -1,8 +1,8 @@
-import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
-import type { UserRole } from "@/types";
-import { company, currentUser, riderUser, supervisorUser } from "@/data/mock";
+import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
+import type { UserRole } from '@/types';
 
-interface AuthState {
+export interface AuthState {
+  hydrated: boolean;
   isAuthenticated: boolean;
   role: UserRole;
   userId: string;
@@ -12,51 +12,53 @@ interface AuthState {
   companyId: string;
   companyName: string;
   companyInitials: string;
+  membershipId: string;
 }
 
 const initialState: AuthState = {
-  isAuthenticated: true,
-  role: "COMPANY_ADMIN",
-  userId: currentUser.id,
-  userName: currentUser.name,
-  userEmail: currentUser.email,
-  avatarInitials: currentUser.avatarInitials,
-  companyId: company.id,
-  companyName: company.name,
-  companyInitials: company.logoInitials,
+  hydrated: false,
+  isAuthenticated: false,
+  role: 'COMPANY_ADMIN',
+  userId: '',
+  userName: '',
+  userEmail: '',
+  avatarInitials: '',
+  companyId: '',
+  companyName: '',
+  companyInitials: '',
+  membershipId: '',
 };
 
 const authSlice = createSlice({
-  name: "auth",
+  name: 'auth',
   initialState,
   reducers: {
-    setRole(state, action: PayloadAction<UserRole>) {
-      state.role = action.payload;
-      if (action.payload === "SUPERVISOR") {
-        state.userId = supervisorUser.id;
-        state.userName = supervisorUser.name;
-        state.userEmail = supervisorUser.email;
-        state.avatarInitials = supervisorUser.avatarInitials;
-      } else if (action.payload === "RIDER") {
-        state.userId = riderUser.id;
-        state.userName = riderUser.name;
-        state.userEmail = riderUser.email;
-        state.avatarInitials = riderUser.avatarInitials;
-      } else {
-        state.userId = currentUser.id;
-        state.userName = currentUser.name;
-        state.userEmail = currentUser.email;
-        state.avatarInitials = currentUser.avatarInitials;
-      }
+    setHydrated(state, action: PayloadAction<boolean>) {
+      state.hydrated = action.payload;
     },
-    login(state) {
+    setSession(
+      state,
+      action: PayloadAction<{
+        userId: string;
+        userName: string;
+        userEmail: string;
+        avatarInitials: string;
+        role: UserRole;
+        companyId: string;
+        companyName: string;
+        companyInitials: string;
+        membershipId: string;
+      }>,
+    ) {
       state.isAuthenticated = true;
+      state.hydrated = true;
+      Object.assign(state, action.payload);
     },
-    logout(state) {
-      state.isAuthenticated = false;
+    clearSession(state) {
+      Object.assign(state, { ...initialState, hydrated: true });
     },
   },
 });
 
-export const { setRole, login, logout } = authSlice.actions;
+export const { setHydrated, setSession, clearSession } = authSlice.actions;
 export default authSlice.reducer;

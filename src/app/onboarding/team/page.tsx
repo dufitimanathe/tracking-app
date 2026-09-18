@@ -3,6 +3,8 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
+import { createMember, createRider, updateOnboarding } from "@/lib/api/resources";
+import { useAppSelector } from "@/store";
 import { SkipForward, UserPlus, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -11,13 +13,64 @@ type Mode = "choose" | "supervisor" | "rider";
 
 export default function OnboardingTeamPage() {
   const router = useRouter();
+  const companyId = useAppSelector((s) => s.auth.companyId);
   const [mode, setMode] = useState<Mode>("choose");
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function goNext() {
-    router.push("/onboarding/complete");
+  async function finish(markTeam: boolean) {
+    if (!companyId) {
+      router.replace("/register");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      if (markTeam) {
+        await updateOnboarding(companyId, { teamAdded: true });
+      }
+      router.push("/onboarding/complete");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to continue");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function invite(e: React.FormEvent) {
+    e.preventDefault();
+    if (!companyId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const f = firstName.trim();
+      const l = lastName.trim() || "Member";
+
+      if (mode === "supervisor") {
+        await createMember(companyId, {
+          firstName: f,
+          lastName: l,
+          phone: phone.trim() || undefined,
+          email: email.trim() || undefined,
+          role: "SUPERVISOR",
+        });
+      } else {
+        await createRider(companyId, {
+          firstName: f,
+          lastName: l,
+          phone: phone.trim(),
+          email: email.trim() || undefined,
+        });
+      }
+      await finish(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invite failed");
+      setLoading(false);
+    }
   }
 
   if (mode === "supervisor" || mode === "rider") {
@@ -27,20 +80,27 @@ export default function OnboardingTeamPage() {
         <div className="mb-6">
           <h1 className="text-xl font-semibold text-text tracking-tight">{title}</h1>
           <p className="mt-1 text-sm text-text-secondary">
-            They&apos;ll get an invite to join your workspace.
+            They&apos;ll join your workspace with a generated temporary password.
           </p>
         </div>
 
-        <form
-          className="space-y-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            goNext();
-          }}
-        >
-          <Field label="Full name">
-            <Input value={name} onChange={(e) => setName(e.target.value)} required />
-          </Field>
+        <form className="space-y-4" onSubmit={invite}>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="First name">
+              <Input
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                required
+              />
+            </Field>
+            <Field label="Last name">
+              <Input
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                required
+              />
+            </Field>
+          </div>
           <Field label="Phone">
             <Input
               type="tel"
@@ -58,11 +118,19 @@ export default function OnboardingTeamPage() {
             />
           </Field>
 
+          {error ? (
+            <p className="text-sm text-danger bg-danger-soft rounded-[8px] px-3 py-2">
+              {error}
+            </p>
+          ) : null}
+
           <div className="flex flex-col-reverse sm:flex-row gap-2 pt-2 sm:justify-end">
             <Button type="button" variant="secondary" onClick={() => setMode("choose")}>
               Back
             </Button>
-            <Button type="submit">Send invite & continue</Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? "Saving…" : "Send invite & continue"}
+            </Button>
           </div>
         </form>
       </Card>
@@ -79,6 +147,10 @@ export default function OnboardingTeamPage() {
           Invite a supervisor, add a rider, or skip and finish setup.
         </p>
       </div>
+
+      {error ? (
+        <p className="text-sm text-danger bg-danger-soft rounded-[8px] px-3 py-2">{error}</p>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <button
@@ -111,7 +183,8 @@ export default function OnboardingTeamPage() {
 
         <button
           type="button"
-          onClick={goNext}
+          disabled={loading}
+          onClick={() => void finish(false)}
           className="rounded-[12px] border border-border bg-surface p-4 text-left shadow-[var(--shadow-soft)] hover:border-border-strong transition-colors"
         >
           <div className="rounded-[10px] bg-surface-muted p-2 text-text-secondary w-fit">

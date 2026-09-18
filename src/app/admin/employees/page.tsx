@@ -1,227 +1,104 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Field, Input, SearchInput, Select } from "@/components/ui/input";
-import { PageHeader } from "@/components/ui/page-header";
+import { Card, MetricCard } from "@/components/ui/card";
+import { SearchInput } from "@/components/ui/input";
+import { Pagination } from "@/components/ui/pagination";
+import { EmptyState, PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Avatar, Modal } from "@/components/ui/overlay";
-import { employees as initialEmployees } from "@/data/mock";
-import { formatRwf, initials } from "@/lib/utils";
+import { fetchEmployees } from "@/lib/api/resources";
+import { mapEmployee } from "@/lib/api/mappers";
+import { useAppSelector } from "@/store";
 import type { Employee } from "@/types";
-import { Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Building2, Users } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
 export default function EmployeesPage() {
-  const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({
-    name: "",
-    phone: "",
-    email: "",
-    department: "Operations",
-    employeeId: "",
-  });
+  const companyId = useAppSelector((s) => s.auth.companyId);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [items, setItems] = useState<Employee[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return employees;
-    return employees.filter(
-      (e) =>
-        e.name.toLowerCase().includes(q) ||
-        e.email.toLowerCase().includes(q) ||
-        e.department.toLowerCase().includes(q) ||
-        e.employeeId.toLowerCase().includes(q),
-    );
-  }, [employees, query]);
+  const load = useCallback(async () => {
+    if (!companyId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await fetchEmployees(companyId, {
+        page,
+        limit: 20,
+        search: search || undefined,
+        sort: "createdAt:DESC",
+      });
+      setItems(result.items.map(mapEmployee));
+      setTotal(result.meta.total);
+      setTotalPages(result.meta.totalPages || 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load employees");
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId, page, search]);
 
-  function handleAdd() {
-    if (!form.name.trim() || !form.phone.trim()) return;
-    const next: Employee = {
-      id: `emp_${Date.now()}`,
-      name: form.name.trim(),
-      phone: form.phone.trim(),
-      email: form.email.trim() || `${form.name.split(" ")[0]?.toLowerCase() ?? "user"}@company.rw`,
-      department: form.department,
-      employeeId: form.employeeId.trim() || `EMP-${1000 + employees.length + 1}`,
-      status: "active",
-      tripsThisMonth: 0,
-      transportCost: 0,
-      lastRequest: "—",
-    };
-    setEmployees((prev) => [next, ...prev]);
-    setForm({
-      name: "",
-      phone: "",
-      email: "",
-      department: "Operations",
-      employeeId: "",
-    });
-    setOpen(false);
-  }
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   return (
-    <div className="space-y-5 sm:space-y-6 max-w-[1400px] mx-auto">
-      <PageHeader
-        title="Employees"
-        description="Company employees who can request transport."
-        actions={
-          <Button size="sm" leftIcon={<Plus className="size-3.5" />} onClick={() => setOpen(true)}>
-            Add employee
-          </Button>
-        }
+    <div className="space-y-4 sm:space-y-5 max-w-[1400px] mx-auto">
+      <PageHeader title="Employees" description="People who can request transport" />
+
+      <div className="grid grid-cols-2 gap-3 max-w-md">
+        <MetricCard label="Total" value={total} icon={<Users className="size-4" />} />
+        <MetricCard
+          label="Active (page)"
+          value={items.filter((e) => e.status === "active").length}
+          accent="success"
+          icon={<Building2 className="size-4" />}
+        />
+      </div>
+
+      <SearchInput
+        placeholder="Search name, phone, department…"
+        value={search}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setPage(1);
+        }}
+        className="max-w-md"
       />
 
+      {error ? (
+        <p className="text-sm text-danger bg-danger-soft rounded-[8px] px-3 py-2">{error}</p>
+      ) : null}
+
       <Card padding="none" className="overflow-hidden">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-b border-border">
-          <div>
-            <h2 className="text-base font-semibold text-text">Employee directory</h2>
-            <p className="text-xs text-text-muted mt-0.5">{filtered.length} employees</p>
-          </div>
-          <SearchInput
-            placeholder="Search employees…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="w-full sm:w-72"
-          />
-        </div>
-
-        <ul className="md:hidden divide-y divide-border">
-          {filtered.map((emp) => (
-            <li key={emp.id} className="p-4">
-              <div className="flex items-start gap-3">
-                <Avatar initials={initials(emp.name)} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold text-text">{emp.name}</p>
-                      <p className="text-xs text-text-secondary mt-0.5">
-                        {emp.employeeId} · {emp.department}
-                      </p>
-                    </div>
-                    <StatusBadge
-                      status={emp.status === "active" ? "available" : "offline"}
-                      label={emp.status === "active" ? "Active" : "Inactive"}
-                    />
-                  </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-text-secondary">
-                    <span>{emp.tripsThisMonth} trips</span>
-                    <span>{formatRwf(emp.transportCost)}</span>
-                    <span className="col-span-2 truncate">{emp.email}</span>
-                    <span className="col-span-2 text-text-muted">
-                      Last request: {emp.lastRequest}
-                    </span>
-                  </div>
+        {loading ? (
+          <EmptyState title="Loading employees…" />
+        ) : items.length === 0 ? (
+          <EmptyState title="No employees" />
+        ) : (
+          <ul className="divide-y divide-border">
+            {items.map((e) => (
+              <li key={e.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-text">{e.name}</p>
+                  <p className="text-xs text-text-secondary">
+                    {e.department} · {e.phone} · {e.employeeId}
+                  </p>
                 </div>
-              </div>
-            </li>
-          ))}
-        </ul>
-
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-surface-muted/50 text-left text-xs uppercase tracking-wide text-text-muted">
-                <th className="px-4 py-3 font-medium">Employee</th>
-                <th className="px-4 py-3 font-medium">Department</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Trips</th>
-                <th className="px-4 py-3 font-medium">Transport cost</th>
-                <th className="px-4 py-3 font-medium">Last request</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {filtered.map((emp) => (
-                <tr key={emp.id} className="hover:bg-surface-muted/40 transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <Avatar initials={initials(emp.name)} size="sm" />
-                      <div>
-                        <p className="font-medium text-text">{emp.name}</p>
-                        <p className="text-xs text-text-muted">
-                          {emp.employeeId} · {emp.phone}
-                        </p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-text-secondary">{emp.department}</td>
-                  <td className="px-4 py-3">
-                    <StatusBadge
-                      status={emp.status === "active" ? "available" : "offline"}
-                      label={emp.status === "active" ? "Active" : "Inactive"}
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-text-secondary">{emp.tripsThisMonth}</td>
-                  <td className="px-4 py-3 font-medium text-text">
-                    {formatRwf(emp.transportCost)}
-                  </td>
-                  <td className="px-4 py-3 text-text-muted">{emp.lastRequest}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                <StatusBadge status={e.status === "active" ? "available" : "offline"} label={e.status} />
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="border-t border-border px-4 py-3">
+          <Pagination page={page} totalPages={totalPages} total={total} onPageChange={setPage} />
         </div>
       </Card>
-
-      <Modal
-        open={open}
-        onClose={() => setOpen(false)}
-        title="Add employee"
-        description="Create a new employee profile for transport requests."
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleAdd}>Save employee</Button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <Field label="Full name">
-            <Input
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="Alice Uwimana"
-            />
-          </Field>
-          <Field label="Phone">
-            <Input
-              value={form.phone}
-              onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-              placeholder="+250 788 000 000"
-            />
-          </Field>
-          <Field label="Email">
-            <Input
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-              placeholder="alice@company.rw"
-            />
-          </Field>
-          <Field label="Department">
-            <Select
-              value={form.department}
-              onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))}
-            >
-              <option>Operations</option>
-              <option>Finance</option>
-              <option>HR</option>
-              <option>Sales</option>
-              <option>IT</option>
-            </Select>
-          </Field>
-          <Field label="Employee ID" hint="Optional — auto-generated if blank">
-            <Input
-              value={form.employeeId}
-              onChange={(e) => setForm((f) => ({ ...f, employeeId: e.target.value }))}
-              placeholder="EMP-1200"
-            />
-          </Field>
-        </div>
-      </Modal>
     </div>
   );
 }

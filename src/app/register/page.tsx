@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
+import { saveAdminDraft } from "@/lib/onboarding-draft";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -10,11 +11,13 @@ import { useState } from "react";
 export default function RegisterPage() {
   const router = useRouter();
   const [form, setForm] = useState({
-    name: "",
+    firstName: "",
+    lastName: "",
     email: "",
     phone: "",
     password: "",
   });
+  const [error, setError] = useState<string | null>(null);
 
   function update(field: keyof typeof form, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -22,6 +25,18 @@ export default function RegisterPage() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setError(null);
+    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(form.password)) {
+      setError("Password must include uppercase, lowercase, and a number.");
+      return;
+    }
+    saveAdminDraft({
+      firstName: form.firstName.trim(),
+      lastName: form.lastName.trim(),
+      email: form.email.trim(),
+      phone: form.phone.trim(),
+      password: form.password,
+    });
     router.push("/onboarding/company");
   }
 
@@ -43,14 +58,24 @@ export default function RegisterPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <Field label="Full name">
-              <Input
-                value={form.name}
-                onChange={(e) => update("name", e.target.value)}
-                placeholder="Marie Uwase"
-                required
-              />
-            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="First name">
+                <Input
+                  value={form.firstName}
+                  onChange={(e) => update("firstName", e.target.value)}
+                  placeholder="Marie"
+                  required
+                />
+              </Field>
+              <Field label="Last name">
+                <Input
+                  value={form.lastName}
+                  onChange={(e) => update("lastName", e.target.value)}
+                  placeholder="Uwase"
+                  required
+                />
+              </Field>
+            </div>
             <Field label="Work email">
               <Input
                 type="email"
@@ -69,7 +94,10 @@ export default function RegisterPage() {
                 required
               />
             </Field>
-            <Field label="Password" hint="At least 8 characters">
+            <Field
+              label="Password"
+              hint="8+ chars with upper, lower, and a number"
+            >
               <Input
                 type="password"
                 value={form.password}
@@ -78,6 +106,12 @@ export default function RegisterPage() {
                 minLength={8}
               />
             </Field>
+
+            {error ? (
+              <p className="text-sm text-danger bg-danger-soft rounded-[8px] px-3 py-2">
+                {error}
+              </p>
+            ) : null}
 
             <Button type="submit" fullWidth size="lg">
               Continue

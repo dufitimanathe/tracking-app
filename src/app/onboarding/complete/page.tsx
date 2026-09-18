@@ -2,20 +2,14 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { useAppDispatch } from "@/store";
-import { login, setRole } from "@/store/slices/auth-slice";
+import { homeForRole } from "@/lib/navigation";
+import { useAppSelector } from "@/store";
 import { CheckCircle2, LayoutDashboard } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 export default function OnboardingCompletePage() {
   const router = useRouter();
-  const dispatch = useAppDispatch();
-
-  function goDashboard() {
-    dispatch(login());
-    dispatch(setRole("COMPANY_ADMIN"));
-    router.push("/admin");
-  }
+  const { isAuthenticated, role } = useAppSelector((s) => s.auth);
 
   return (
     <Card className="shadow-[var(--shadow-soft)] text-center" padding="lg">
@@ -26,32 +20,18 @@ export default function OnboardingCompletePage() {
         Workspace ready
       </h1>
       <p className="mt-2 text-sm text-text-secondary max-w-md mx-auto">
-        Virunga Transport is set up for dispatch, fleet tracking, and trip
-        approvals. You can refine settings anytime from the admin console.
+        {isAuthenticated
+          ? "Your company is connected to the API. Open the admin console to manage fleet, riders, and trips."
+          : "Sign in with your new admin account to open the live console."}
       </p>
-
-      <ul className="mt-6 mx-auto max-w-sm text-left space-y-2 text-sm text-text-secondary">
-        <li className="flex gap-2">
-          <CheckCircle2 className="size-4 text-success shrink-0 mt-0.5" />
-          Company profile configured
-        </li>
-        <li className="flex gap-2">
-          <CheckCircle2 className="size-4 text-success shrink-0 mt-0.5" />
-          Operations defaults saved
-        </li>
-        <li className="flex gap-2">
-          <CheckCircle2 className="size-4 text-success shrink-0 mt-0.5" />
-          Ready for live requests and GPS
-        </li>
-      </ul>
-
-      <div className="mt-8 flex justify-center">
+      <div className="mt-6 flex flex-col sm:flex-row gap-2 justify-center">
         <Button
-          size="lg"
-          onClick={goDashboard}
-          leftIcon={<LayoutDashboard className="size-4" />}
+          onClick={() =>
+            router.push(isAuthenticated ? homeForRole(role) : "/login")
+          }
         >
-          Go to Dashboard
+          <LayoutDashboard className="size-4" />
+          {isAuthenticated ? "Open dashboard" : "Go to login"}
         </Button>
       </div>
     </Card>

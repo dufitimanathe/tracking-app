@@ -2,7 +2,9 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { updateOnboarding } from "@/lib/api/resources";
 import { cn } from "@/lib/utils";
+import { useAppSelector } from "@/store";
 import { Bike, MapPin, ShieldCheck, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -23,10 +25,22 @@ const RIDER_COUNTS: Option[] = [
   { id: "50+", label: "50+ riders" },
 ];
 
-const GPS_OPTIONS: Option[] = [
-  { id: "yes", label: "Yes — devices ready", hint: "Track live positions" },
-  { id: "partial", label: "Partial coverage", hint: "Some bikes only" },
-  { id: "later", label: "Add later", hint: "Manual status for now" },
+const TRACKING_OPTIONS: Option[] = [
+  {
+    id: "phone",
+    label: "Rider phone GPS",
+    hint: "Recommended — mobile app tracks bikes",
+  },
+  {
+    id: "hybrid",
+    label: "Phone + some hardware",
+    hint: "Mix of app and devices",
+  },
+  {
+    id: "hardware",
+    label: "Hardware GPS later",
+    hint: "Optional expensive devices",
+  },
 ];
 
 const APPROVAL_OPTIONS: Option[] = [
@@ -82,10 +96,35 @@ function SelectorGrid({
 
 export default function OnboardingOperationsPage() {
   const router = useRouter();
+  const companyId = useAppSelector((s) => s.auth.companyId);
   const [fleetSize, setFleetSize] = useState("31-75");
   const [riders, setRiders] = useState("26-50");
-  const [gps, setGps] = useState("yes");
+  const [tracking, setTracking] = useState("phone");
   const [approval, setApproval] = useState("always");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function continueNext() {
+    if (!companyId) {
+      router.replace("/register");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      // Preferences are UI-only for now; mark ops step complete on the API.
+      void fleetSize;
+      void riders;
+      void tracking;
+      void approval;
+      await updateOnboarding(companyId, { operationalSettingsCompleted: true });
+      router.push("/onboarding/fleet");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -99,7 +138,7 @@ export default function OnboardingOperationsPage() {
               Operations profile
             </h1>
             <p className="mt-1 text-sm text-text-secondary">
-              Tune defaults for dispatch, GPS, and approvals.
+              Tune defaults for dispatch, phone tracking, and approvals.
             </p>
           </div>
         </div>
@@ -128,9 +167,13 @@ export default function OnboardingOperationsPage() {
         <section className="mt-6 space-y-3">
           <div className="flex items-center gap-2">
             <MapPin className="size-4 text-text-muted" />
-            <h2 className="text-sm font-semibold text-text">GPS tracking</h2>
+            <h2 className="text-sm font-semibold text-text">Location tracking</h2>
           </div>
-          <SelectorGrid options={GPS_OPTIONS} value={gps} onChange={setGps} />
+          <SelectorGrid
+            options={TRACKING_OPTIONS}
+            value={tracking}
+            onChange={setTracking}
+          />
         </section>
 
         <section className="mt-6 space-y-3">
@@ -145,6 +188,12 @@ export default function OnboardingOperationsPage() {
           />
         </section>
 
+        {error ? (
+          <p className="mt-4 text-sm text-danger bg-danger-soft rounded-[8px] px-3 py-2">
+            {error}
+          </p>
+        ) : null}
+
         <div className="flex flex-col-reverse sm:flex-row gap-2 pt-6 sm:justify-end">
           <Button
             type="button"
@@ -153,8 +202,8 @@ export default function OnboardingOperationsPage() {
           >
             Back
           </Button>
-          <Button type="button" onClick={() => router.push("/onboarding/fleet")}>
-            Continue
+          <Button type="button" disabled={loading} onClick={() => void continueNext()}>
+            {loading ? "Saving…" : "Continue"}
           </Button>
         </div>
       </Card>

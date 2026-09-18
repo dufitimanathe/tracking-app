@@ -66,6 +66,13 @@ export interface AppUser {
   companyId: string;
 }
 
+export type MapStatus =
+  | "moving"
+  | "stopped"
+  | "delayed"
+  | "offline"
+  | "poor_gps";
+
 export interface Motorcycle {
   id: string;
   plate: string;
@@ -86,6 +93,8 @@ export interface Motorcycle {
   distanceTodayKm: number;
   lastSeen: string;
   heading?: number;
+  /** Optional live-tracking marker variant (preferred over status for map pins). */
+  mapStatus?: MapStatus;
 }
 
 export interface Rider {

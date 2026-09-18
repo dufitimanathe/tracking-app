@@ -4,11 +4,18 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
-import { riders } from "@/data/mock";
+import { mapRider } from "@/lib/api/mappers";
+import {
+  assignRiderMotorcycle,
+  createMotorcycle,
+  fetchRiders,
+} from "@/lib/api/resources";
+import { useAppSelector } from "@/store";
+import type { Rider } from "@/types";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 interface FormState {
   plate: string;
@@ -17,12 +24,6 @@ interface FormState {
   model: string;
   year: string;
   color: string;
-  engineCc: string;
-  fuelType: string;
-  chassisNumber: string;
-  registrationExpiry: string;
-  gpsDeviceId: string;
-  gpsProvider: string;
   riderId: string;
   notes: string;
 }
@@ -34,40 +35,61 @@ const initial: FormState = {
   model: "",
   year: "2024",
   color: "Black",
-  engineCc: "150",
-  fuelType: "petrol",
-  chassisNumber: "",
-  registrationExpiry: "",
-  gpsDeviceId: "",
-  gpsProvider: "TrackSolid",
   riderId: "",
   notes: "",
 };
 
 export default function NewMotorcyclePage() {
   const router = useRouter();
+  const companyId = useAppSelector((s) => s.auth.companyId);
   const [form, setForm] = useState<FormState>(initial);
+  const [riders, setRiders] = useState<Rider[]>([]);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!companyId) return;
+    void fetchRiders(companyId, { limit: 50 })
+      .then((res) => setRiders(res.items.map(mapRider)))
+      .catch(() => setRiders([]));
+  }, [companyId]);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!companyId) return;
     setSaving(true);
-    // Mock save — return to fleet list
-    window.setTimeout(() => {
+    setError(null);
+    try {
+      const moto = await createMotorcycle(companyId, {
+        plateNumber: form.plate.trim(),
+        internalCode: form.fleetNumber.trim() || undefined,
+        brand: form.brand || undefined,
+        model: form.model.trim() || undefined,
+        year: form.year ? Number(form.year) : undefined,
+        color: form.color || undefined,
+      });
+      if (form.riderId) {
+        await assignRiderMotorcycle(companyId, {
+          riderId: form.riderId,
+          motorcycleId: moto.id,
+        });
+      }
+      router.push(`/admin/fleet/${moto.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save motorcycle");
       setSaving(false);
-      router.push("/admin/fleet");
-    }, 400);
+    }
   }
 
   return (
     <div className="space-y-4 sm:space-y-5 max-w-3xl mx-auto">
       <PageHeader
         title="Add Motorcycle"
-        description="Register a new unit in the Virunga Transport fleet"
+        description="Register a new unit in your fleet"
         actions={
           <Link
             href="/admin/fleet"
@@ -78,6 +100,10 @@ export default function NewMotorcyclePage() {
           </Link>
         }
       />
+
+      {error ? (
+        <p className="text-sm text-danger bg-danger-soft rounded-[8px] px-3 py-2">{error}</p>
+      ) : null}
 
       <form onSubmit={onSubmit} className="space-y-4">
         <Card>
@@ -93,7 +119,6 @@ export default function NewMotorcyclePage() {
             </Field>
             <Field label="Fleet number" hint="Internal ID">
               <Input
-                required
                 value={form.fleetNumber}
                 onChange={(e) => update("fleetNumber", e.target.value)}
                 placeholder="VT-032"
@@ -140,69 +165,15 @@ export default function NewMotorcyclePage() {
                 onChange={(e) => update("color", e.target.value)}
               />
             </Field>
-            <Field label="Engine (cc)">
-              <Input
-                value={form.engineCc}
-                onChange={(e) => update("engineCc", e.target.value)}
-              />
-            </Field>
-            <Field label="Fuel type">
-              <Select
-                value={form.fuelType}
-                onChange={(e) => update("fuelType", e.target.value)}
-              >
-                <option value="petrol">Petrol</option>
-                <option value="electric">Electric</option>
-              </Select>
-            </Field>
           </div>
-        </Card>
-
-        <Card>
-          <h2 className="text-sm font-semibold text-text mb-4">
-            Registration & GPS
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Chassis number">
-              <Input
-                value={form.chassisNumber}
-                onChange={(e) => update("chassisNumber", e.target.value)}
-                placeholder="MD2A21…"
-              />
-            </Field>
-            <Field label="Registration expiry">
-              <Input
-                type="date"
-                value={form.registrationExpiry}
-                onChange={(e) => update("registrationExpiry", e.target.value)}
-              />
-            </Field>
-            <Field label="GPS device ID">
-              <Input
-                value={form.gpsDeviceId}
-                onChange={(e) => update("gpsDeviceId", e.target.value)}
-                placeholder="IMEI / device serial"
-              />
-            </Field>
-            <Field label="GPS provider">
-              <Select
-                value={form.gpsProvider}
-                onChange={(e) => update("gpsProvider", e.target.value)}
-              >
-                <option value="TrackSolid">TrackSolid</option>
-                <option value="Queclink">Queclink</option>
-                <option value="Other">Other</option>
-              </Select>
-            </Field>
-          </div>
+          <p className="mt-3 text-xs text-text-muted">
+            Tracking uses the rider phone app by default. Hardware GPS can be added later.
+          </p>
         </Card>
 
         <Card>
           <h2 className="text-sm font-semibold text-text mb-4">Assignment</h2>
-          <Field
-            label="Assign rider"
-            hint="Optional — can assign later from Live Ops"
-          >
+          <Field label="Assign rider" hint="Optional — can assign later">
             <Select
               value={form.riderId}
               onChange={(e) => update("riderId", e.target.value)}

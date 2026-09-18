@@ -3,27 +3,107 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/input";
+import {
+  companyInitials,
+  displayName,
+  fetchMe,
+  initialsOf,
+  persistAuth,
+  pickMembership,
+  registerCompanyRequest,
+} from "@/lib/api/auth";
+import { updateOnboarding } from "@/lib/api/resources";
+import { clearAdminDraft, loadAdminDraft } from "@/lib/onboarding-draft";
+import { useAppDispatch } from "@/store";
+import { setSession } from "@/store/slices/auth-slice";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function OnboardingCompanyPage() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const [form, setForm] = useState({
-    name: "Virunga Transport Ltd",
-    phone: "+250 788 123 456",
-    email: "ops@virunga.rw",
-    address: "KG 7 Ave, Kacyiru, Kigali",
+    name: "",
+    phone: "",
+    email: "",
+    address: "",
     currency: "RWF",
     timezone: "Africa/Kigali",
   });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!loadAdminDraft()) {
+      router.replace("/register");
+    }
+  }, [router]);
 
   function update(field: keyof typeof form, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    router.push("/onboarding/operations");
+    const admin = loadAdminDraft();
+    if (!admin) {
+      router.replace("/register");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const auth = await registerCompanyRequest({
+        company: {
+          name: form.name.trim(),
+          phone: form.phone.trim() || undefined,
+          email: form.email.trim() || undefined,
+          address: form.address.trim() || undefined,
+          currency: form.currency,
+          timezone: form.timezone,
+        },
+        admin: {
+          firstName: admin.firstName,
+          lastName: admin.lastName,
+          email: admin.email || undefined,
+          phone: admin.phone || undefined,
+          password: admin.password,
+        },
+      });
+
+      persistAuth(auth);
+      const me = await fetchMe();
+      const membership = pickMembership(me.memberships);
+      if (!membership) {
+        throw new Error("Company created but no membership returned.");
+      }
+      persistAuth(auth, membership.companyId);
+      dispatch(
+        setSession({
+          userId: me.user.id,
+          userName: displayName(me.user),
+          userEmail: me.user.email ?? admin.email,
+          avatarInitials: initialsOf(me.user),
+          role: membership.role,
+          companyId: membership.companyId,
+          companyName: membership.companyName,
+          companyInitials: companyInitials(membership.companyName),
+          membershipId: membership.id,
+        }),
+      );
+
+      await updateOnboarding(membership.companyId, {
+        companyProfileCompleted: true,
+      });
+
+      clearAdminDraft();
+      router.push("/onboarding/operations");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Registration failed");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -33,7 +113,7 @@ export default function OnboardingCompanyPage() {
           Company details
         </h1>
         <p className="mt-1 text-sm text-text-secondary">
-          This becomes your FleetOps workspace identity.
+          This creates your FleetOps workspace and admin account.
         </p>
       </div>
 
@@ -88,6 +168,12 @@ export default function OnboardingCompanyPage() {
           </Field>
         </div>
 
+        {error ? (
+          <p className="text-sm text-danger bg-danger-soft rounded-[8px] px-3 py-2">
+            {error}
+          </p>
+        ) : null}
+
         <div className="flex flex-col-reverse sm:flex-row gap-2 pt-2 sm:justify-end">
           <Button
             type="button"
@@ -96,7 +182,9 @@ export default function OnboardingCompanyPage() {
           >
             Back
           </Button>
-          <Button type="submit">Continue</Button>
+          <Button type="submit" disabled={loading}>
+            {loading ? "Creating…" : "Create company"}
+          </Button>
         </div>
       </form>
     </Card>

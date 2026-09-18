@@ -5,104 +5,163 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Timeline } from "@/components/ui/overlay";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { motorcycles, trips } from "@/data/mock";
-import { formatKm, formatRwf } from "@/lib/utils";
+import { mapRiderMeMotorcycle, mapTrip } from "@/lib/api/mappers";
 import {
-  CheckCircle2,
-  Flag,
-  MapPinned,
-  Navigation,
-  Play,
-} from "lucide-react";
-import { useMemo, useState } from "react";
+  arriveTrip,
+  completeTrip,
+  fetchRiderMe,
+  fetchTrips,
+  startTrip,
+} from "@/lib/api/resources";
+import { formatKm, formatRwf } from "@/lib/utils";
+import { useAppSelector } from "@/store";
+import type { Motorcycle, Trip } from "@/types";
+import { CheckCircle2, Flag, MapPinned, Play } from "lucide-react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-type TripPhase = "navigate" | "arrived" | "start" | "complete" | "done";
-
-const PHASE_ORDER: TripPhase[] = [
-  "navigate",
-  "arrived",
-  "start",
-  "complete",
-  "done",
-];
+type ActionKind = "arrive" | "start" | "complete" | null;
 
 export default function RiderActiveTripPage() {
-  const trip = trips.find((t) => t.id === "TRIP-2379") ?? trips[0];
-  const moto = motorcycles.find((m) => m.plate === trip.motorcyclePlate) ?? motorcycles[0];
-  const [phase, setPhase] = useState<TripPhase>("navigate");
+  const companyId = useAppSelector((s) => s.auth.companyId);
+  const [trip, setTrip] = useState<Trip | null>(null);
+  const [rawStatus, setRawStatus] = useState<string>("");
+  const [moto, setMoto] = useState<Motorcycle | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!companyId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [me, trips] = await Promise.all([
+        fetchRiderMe(companyId),
+        fetchTrips(companyId, { limit: 20, sort: "updatedAt:DESC" }),
+      ]);
+      setMoto(mapRiderMeMotorcycle(me));
+      const active =
+        trips.items.find((t) =>
+          [
+            "RIDER_ASSIGNED",
+            "RIDER_ACCEPTED",
+            "RIDER_TO_PICKUP",
+            "RIDER_ARRIVED",
+            "IN_PROGRESS",
+          ].includes(t.status.toUpperCase()),
+        ) ?? null;
+      if (active) {
+        setTrip(mapTrip(active));
+        setRawStatus(active.status);
+      } else {
+        const last = trips.items[0];
+        setTrip(last ? mapTrip(last) : null);
+        setRawStatus(last?.status ?? "");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load active trip");
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const action = useMemo(() => {
-    switch (phase) {
-      case "navigate":
-        return {
-          label: "Navigate to Pickup",
-          icon: <Navigation className="size-4" />,
-          next: "arrived" as TripPhase,
-        };
-      case "arrived":
-        return {
-          label: "Arrived",
-          icon: <MapPinned className="size-4" />,
-          next: "start" as TripPhase,
-        };
-      case "start":
-        return {
-          label: "Start Trip",
-          icon: <Play className="size-4" />,
-          next: "complete" as TripPhase,
-        };
-      case "complete":
-        return {
-          label: "Complete Trip",
-          icon: <Flag className="size-4" />,
-          next: "done" as TripPhase,
-        };
-      default:
-        return null;
+    const s = rawStatus.toUpperCase();
+    if (s === "RIDER_TO_PICKUP" || s === "RIDER_ACCEPTED") {
+      return {
+        kind: "arrive" as ActionKind,
+        label: "Arrived at pickup",
+        icon: <MapPinned className="size-4" />,
+      };
     }
-  }, [phase]);
+    if (s === "RIDER_ARRIVED") {
+      return {
+        kind: "start" as ActionKind,
+        label: "Start Trip",
+        icon: <Play className="size-4" />,
+      };
+    }
+    if (s === "IN_PROGRESS") {
+      return {
+        kind: "complete" as ActionKind,
+        label: "Complete Trip",
+        icon: <Flag className="size-4" />,
+      };
+    }
+    return null;
+  }, [rawStatus]);
 
-  const statusLabel =
-    phase === "navigate"
-      ? "to_pickup"
-      : phase === "arrived"
-        ? "waiting"
-        : phase === "start" || phase === "complete"
-          ? "in_progress"
-          : "completed";
+  const done = rawStatus.toUpperCase() === "COMPLETED";
+
+  async function runAction(kind: ActionKind) {
+    if (!companyId || !trip || !kind) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (kind === "arrive") await arriveTrip(companyId, trip.id);
+      if (kind === "start") await startTrip(companyId, trip.id);
+      if (kind === "complete") await completeTrip(companyId, trip.id);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-lg py-16 text-center text-sm text-text-muted">
+        Loading active trip…
+      </div>
+    );
+  }
+
+  if (!trip) {
+    return (
+      <div className="mx-auto max-w-lg py-16 text-center space-y-3">
+        <p className="text-sm text-text-secondary">No active trip right now.</p>
+        <Link href="/rider" className="text-sm font-medium text-primary">
+          Back to home
+        </Link>
+      </div>
+    );
+  }
 
   const timeline = [
     {
       label: "Assigned",
-      time: trip.assignedAt ?? "Today, 7:35 AM",
+      time: trip.assignedAt,
       done: true,
     },
     {
       label: "En route to pickup",
-      time: phase !== "navigate" ? "Today, 7:40 AM" : undefined,
-      done: phase !== "navigate",
-      current: phase === "navigate",
+      time: trip.status === "to_pickup" || trip.pickupAt || trip.startedAt ? trip.assignedAt : undefined,
+      done: ["waiting", "in_progress", "completed"].includes(trip.status) || Boolean(trip.pickupAt),
+      current: trip.status === "to_pickup" || trip.status === "assigned",
     },
     {
       label: "Arrived at pickup",
-      time: PHASE_ORDER.indexOf(phase) >= 2 ? "Today, 7:48 AM" : undefined,
-      done: PHASE_ORDER.indexOf(phase) >= 2,
-      current: phase === "arrived",
+      time: trip.pickupAt,
+      done: ["in_progress", "completed"].includes(trip.status) || Boolean(trip.startedAt),
+      current: trip.status === "waiting",
     },
     {
       label: "Trip in progress",
-      time:
-        PHASE_ORDER.indexOf(phase) >= 3
-          ? trip.startedAt ?? "Today, 7:51 AM"
-          : undefined,
-      done: PHASE_ORDER.indexOf(phase) >= 3,
-      current: phase === "start" || phase === "complete",
+      time: trip.startedAt,
+      done: trip.status === "completed",
+      current: trip.status === "in_progress",
     },
     {
       label: "Completed",
-      time: phase === "done" ? "Just now" : undefined,
-      done: phase === "done",
-      current: phase === "done",
+      time: trip.completedAt,
+      done: done,
+      current: done,
     },
   ];
 
@@ -114,27 +173,30 @@ export default function RiderActiveTripPage() {
             Active trip
           </p>
           <h1 className="text-xl font-semibold text-text tracking-tight mt-0.5">
-            {trip.id}
+            {trip.id.slice(0, 8)}
           </h1>
         </div>
-        <StatusBadge status={statusLabel} />
+        <StatusBadge status={trip.status} />
       </div>
 
-      <OpsMap
-        motorcycles={[moto]}
-        selectedId={moto.id}
-        className="h-[220px]"
-        compact
-      />
+      {error ? (
+        <p className="text-sm text-danger bg-danger-soft rounded-[8px] px-3 py-2">{error}</p>
+      ) : null}
+
+      {moto ? (
+        <OpsMap
+          motorcycles={[moto]}
+          selectedId={moto.id}
+          className="h-[220px]"
+          compact
+        />
+      ) : null}
 
       <Card padding="md">
         <p className="text-xs text-text-muted uppercase tracking-wide font-semibold">
           Employee
         </p>
         <p className="text-sm font-semibold text-text mt-1">{trip.employeeName}</p>
-        {trip.employeePhone ? (
-          <p className="text-xs text-text-secondary mt-0.5">{trip.employeePhone}</p>
-        ) : null}
 
         <div className="mt-4 grid grid-cols-1 gap-3">
           <div className="rounded-[10px] bg-surface-muted px-3 py-2.5">
@@ -150,9 +212,7 @@ export default function RiderActiveTripPage() {
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
           <span>{formatKm(trip.distanceKm)}</span>
           <span>{formatRwf(trip.cost)}</span>
-          {trip.etaMin != null && phase !== "done" ? (
-            <span>ETA {trip.etaMin} min</span>
-          ) : null}
+          {trip.etaMin != null && !done ? <span>ETA {trip.etaMin} min</span> : null}
         </div>
       </Card>
 
@@ -165,18 +225,31 @@ export default function RiderActiveTripPage() {
         <Button
           size="lg"
           fullWidth
+          disabled={busy}
           leftIcon={action.icon}
-          onClick={() => setPhase(action.next)}
+          onClick={() => void runAction(action.kind)}
         >
-          {action.label}
+          {busy ? "Updating…" : action.label}
         </Button>
-      ) : (
+      ) : done ? (
         <Card padding="md" className="text-center bg-success-soft border-green-200">
           <CheckCircle2 className="size-8 text-success mx-auto" />
           <p className="mt-2 text-sm font-semibold text-text">Trip completed</p>
           <p className="text-xs text-text-secondary mt-1">
             Great work — head back online when you&apos;re ready.
           </p>
+          <Link href="/rider" className="mt-3 inline-block text-xs font-medium text-primary">
+            Back to home
+          </Link>
+        </Card>
+      ) : (
+        <Card padding="md">
+          <p className="text-sm text-text-secondary">
+            Accept this assignment from Home before continuing.
+          </p>
+          <Link href="/rider" className="mt-2 inline-block text-xs font-medium text-primary">
+            Open home
+          </Link>
         </Card>
       )}
     </div>

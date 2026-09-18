@@ -43,7 +43,7 @@ export function PageHeader({
 interface EmptyStateProps {
   icon?: ReactNode;
   title: string;
-  description: string;
+  description?: string;
   action?: ReactNode;
   className?: string;
 }
@@ -68,7 +68,9 @@ export function EmptyState({
         </div>
       ) : null}
       <h3 className="text-base font-semibold text-text">{title}</h3>
-      <p className="mt-1 text-sm text-text-secondary max-w-sm">{description}</p>
+      {description ? (
+        <p className="mt-1 text-sm text-text-secondary max-w-sm">{description}</p>
+      ) : null}
       {action ? <div className="mt-4">{action}</div> : null}
     </div>
   );

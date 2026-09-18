@@ -2,19 +2,15 @@
 
 import { Avatar } from "@/components/ui/overlay";
 import { LiveIndicator } from "@/components/ui/page-header";
-import { StatusBadge } from "@/components/ui/status-badge";
-import { notifications } from "@/data/mock";
-import { homeForRole, navForRole, roleLabel, type NavItem } from "@/lib/navigation";
+import { navForRole, roleLabel, type NavItem } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { useAppDispatch, useAppSelector } from "@/store";
-import { setRole } from "@/store/slices/auth-slice";
 import {
   setNotificationsOpen,
   setSearchOpen,
   setSidebarOpen,
   toggleSidebarCollapsed,
 } from "@/store/slices/ui-slice";
-import type { UserRole } from "@/types";
 import {
   Bell,
   ChevronsLeft,
@@ -29,6 +25,10 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
+import { fetchNotifications } from "@/lib/api/resources";
+import { mapNotification } from "@/lib/api/mappers";
+import type { NotificationItem } from "@/types";
 
 function NavLink({
   item,
@@ -79,14 +79,15 @@ function NavLink({
 function SidebarContent({
   collapsed,
   onNavigate,
+  unread,
 }: {
   collapsed?: boolean;
   onNavigate?: () => void;
+  unread: number;
 }) {
   const dispatch = useAppDispatch();
   const { role, companyName, companyInitials } = useAppSelector((s) => s.auth);
   const nav = navForRole(role);
-  const unread = notifications.filter((n) => !n.read).length;
 
   return (
     <div className="flex h-full flex-col">
@@ -112,9 +113,9 @@ function SidebarContent({
             collapsed={collapsed}
             badgeCount={
               item.badge === "pending"
-                ? 4
+                ? undefined
                 : item.badge === "incidents"
-                  ? 1
+                  ? undefined
                   : item.label === "Notifications"
                     ? unread
                     : undefined
@@ -169,7 +170,13 @@ function SidebarContent({
   );
 }
 
-function TopHeader({ title }: { title?: string }) {
+function TopHeader({
+  title,
+  notifications,
+}: {
+  title?: string;
+  notifications: NotificationItem[];
+}) {
   const dispatch = useAppDispatch();
   const router = useRouter();
   const { userName, avatarInitials, role } = useAppSelector((s) => s.auth);
@@ -291,34 +298,11 @@ function TopHeader({ title }: { title?: string }) {
         </div>
       </div>
 
-      {/* Demo role switcher — remove when auth is wired */}
-      <div className="border-t border-border bg-surface-muted/50 px-3 sm:px-5 py-1.5 flex items-center gap-2 overflow-x-auto">
-        <span className="text-[11px] text-text-muted shrink-0">Preview as:</span>
-        {(
-          [
-            ["COMPANY_ADMIN", "Admin"],
-            ["SUPERVISOR", "Supervisor"],
-            ["RIDER", "Rider"],
-          ] as [UserRole, string][]
-        ).map(([r, label]) => (
-          <button
-            key={r}
-            type="button"
-            onClick={() => {
-              dispatch(setRole(r));
-              router.push(homeForRole(r));
-            }}
-            className={cn(
-              "rounded-full px-2.5 py-0.5 text-[11px] font-medium border transition-colors",
-              role === r
-                ? "bg-primary text-white border-primary"
-                : "bg-surface text-text-secondary border-border hover:border-border-strong",
-            )}
-          >
-            {label}
-          </button>
-        ))}
-        <StatusBadge status="online" label="GPS healthy" className="ml-auto hidden sm:inline-flex" />
+      {/* Session strip */}
+      <div className="border-t border-border bg-surface-muted/50 px-3 sm:px-5 py-1.5 flex items-center gap-2">
+        <span className="text-[11px] text-text-muted">
+          Signed in via API · {roleLabel(role)}
+        </span>
       </div>
 
       {searchOpen ? (
@@ -360,10 +344,27 @@ export function AppShell({
 }) {
   const dispatch = useAppDispatch();
   const { sidebarOpen, sidebarCollapsed } = useAppSelector((s) => s.ui);
-  const { role } = useAppSelector((s) => s.auth);
+  const { role, companyId } = useAppSelector((s) => s.auth);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+
+  useEffect(() => {
+    if (!companyId) return;
+    let cancelled = false;
+    void fetchNotifications(companyId, { page: 1, limit: 20 })
+      .then((res) => {
+        if (!cancelled) setNotifications(res.items.map(mapNotification));
+      })
+      .catch(() => {
+        if (!cancelled) setNotifications([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
 
   // Rider uses bottom nav on mobile; sidebar only from lg+
   const isRider = role === "RIDER";
+  const unread = notifications.filter((n) => !n.read).length;
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -377,7 +378,7 @@ export function AppShell({
               : "w-[260px]",
         )}
       >
-        <SidebarContent collapsed={!isRider && sidebarCollapsed} />
+        <SidebarContent collapsed={!isRider && sidebarCollapsed} unread={unread} />
       </aside>
 
       {/* Mobile drawer */}
@@ -390,13 +391,16 @@ export function AppShell({
             onClick={() => dispatch(setSidebarOpen(false))}
           />
           <aside className="absolute inset-y-0 left-0 w-[min(100%,280px)] bg-surface border-r border-border shadow-[var(--shadow-overlay)]">
-            <SidebarContent onNavigate={() => dispatch(setSidebarOpen(false))} />
+            <SidebarContent
+              onNavigate={() => dispatch(setSidebarOpen(false))}
+              unread={unread}
+            />
           </aside>
         </div>
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopHeader title={title} />
+        <TopHeader title={title} notifications={notifications} />
         <main
           className={cn(
             "flex-1 px-3 py-4 sm:px-5 sm:py-6",

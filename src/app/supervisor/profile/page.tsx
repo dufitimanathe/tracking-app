@@ -7,7 +7,9 @@ import { Avatar } from "@/components/ui/overlay";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { company, supervisorUser, supervisors } from "@/data/mock";
 import { useAppDispatch } from "@/store";
-import { logout } from "@/store/slices/auth-slice";
+import { clearSession as clearStorage, getRefreshToken } from "@/lib/api/client";
+import { logoutRequest } from "@/lib/api/auth";
+import { clearSession } from "@/store/slices/auth-slice";
 import { LogOut, Shield } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -78,8 +80,13 @@ export default function SupervisorProfilePage() {
         fullWidth
         leftIcon={<LogOut className="size-4" />}
         onClick={() => {
-          dispatch(logout());
-          router.push("/login");
+          const refresh = getRefreshToken();
+          void (async () => {
+            if (refresh) await logoutRequest(refresh).catch(() => clearStorage());
+            else clearStorage();
+            dispatch(clearSession());
+            router.push("/login");
+          })();
         }}
       >
         Sign out
