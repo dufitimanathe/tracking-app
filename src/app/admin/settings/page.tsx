@@ -6,6 +6,10 @@ import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { company } from "@/data/mock";
 import { fetchMapsStatus, type MapsStatus } from "@/lib/api/maps";
+import {
+  fetchIntegrationsHealth,
+  type IntegrationHealth,
+} from "@/lib/api/integrations";
 import { appConfig, isGoogleMapsEnabled } from "@/lib/config";
 import { calculateFare, cn, formatRwf } from "@/lib/utils";
 import { useEffect, useMemo, useState } from "react";
@@ -46,6 +50,8 @@ export default function SettingsPage() {
 
   const [mapsStatus, setMapsStatus] = useState<MapsStatus | null>(null);
   const [mapsStatusError, setMapsStatusError] = useState<string | null>(null);
+  const [integrationsHealth, setIntegrationsHealth] = useState<IntegrationHealth | null>(null);
+  const [integrationsError, setIntegrationsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (section !== "tracking") return;
@@ -60,6 +66,26 @@ export default function SettingsPage() {
       .catch((err: unknown) => {
         if (!cancelled) {
           setMapsStatusError(err instanceof Error ? err.message : "Backend unreachable");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [section]);
+
+  useEffect(() => {
+    if (section !== "integrations") return;
+    let cancelled = false;
+    void fetchIntegrationsHealth()
+      .then((health) => {
+        if (!cancelled) {
+          setIntegrationsHealth(health);
+          setIntegrationsError(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setIntegrationsError(err instanceof Error ? err.message : "Backend unreachable");
         }
       });
     return () => {
@@ -330,7 +356,112 @@ export default function SettingsPage() {
             </Card>
           ) : null}
 
-          {section !== "company" && section !== "pricing" && section !== "tracking" ? (
+          {section === "integrations" ? (
+            <Card>
+              <h2 className="text-base font-semibold text-text">Integrations</h2>
+              <p className="mt-2 text-sm text-text-secondary">
+                WhatsApp, OpenAI, and Google Maps connection status. Secrets are never shown —
+                configure them in backend <code className="text-xs">.env</code>. See{" "}
+                <code className="text-xs">backend/docs/WHATSAPP_AI_DISPATCH.md</code>.
+              </p>
+
+              {integrationsError ? (
+                <p className="mt-4 text-sm text-danger">{integrationsError}</p>
+              ) : null}
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                {(
+                  [
+                    {
+                      label: "WhatsApp",
+                      ok: integrationsHealth?.whatsapp.configured,
+                      detail: integrationsHealth
+                        ? integrationsHealth.whatsapp.lastWebhookAt
+                          ? `Last webhook ${new Date(integrationsHealth.whatsapp.lastWebhookAt).toLocaleString()}`
+                          : "No webhook received yet"
+                        : "Checking…",
+                      extra:
+                        integrationsHealth && integrationsHealth.whatsapp.recentErrorCount > 0
+                          ? `${integrationsHealth.whatsapp.recentErrorCount} errors (24h)`
+                          : null,
+                    },
+                    {
+                      label: "OpenAI",
+                      ok: integrationsHealth?.openai.configured,
+                      detail: integrationsHealth
+                        ? `${integrationsHealth.openai.provider} / ${integrationsHealth.openai.model}`
+                        : "Checking…",
+                      extra: null,
+                    },
+                    {
+                      label: "Google Maps",
+                      ok: integrationsHealth?.googleMaps.configured,
+                      detail: integrationsHealth
+                        ? integrationsHealth.googleMaps.configured
+                          ? "Places + Routes + Geocoding"
+                          : "Server key not set"
+                        : "Checking…",
+                      extra: null,
+                    },
+                  ] as const
+                ).map((card) => (
+                  <div
+                    key={card.label}
+                    className="rounded-[10px] border border-border p-4"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-text">{card.label}</p>
+                      <span
+                        className={
+                          card.ok === true
+                            ? "text-xs font-medium text-success"
+                            : card.ok === false
+                              ? "text-xs font-medium text-danger"
+                              : "text-xs text-text-muted"
+                        }
+                      >
+                        {card.ok === true
+                          ? "Connected"
+                          : card.ok === false
+                            ? "Not configured"
+                            : "…"}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs text-text-secondary">{card.detail}</p>
+                    {card.extra ? (
+                      <p className="mt-1 text-xs text-danger">{card.extra}</p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5 rounded-[10px] border border-dashed border-border bg-surface-muted/40 p-4 text-sm text-text-secondary space-y-2">
+                <p className="font-medium text-text">Paste slots</p>
+                <p>
+                  <code className="text-xs">WHATSAPP_ACCESS_TOKEN</code>,{" "}
+                  <code className="text-xs">WHATSAPP_PHONE_NUMBER_ID</code>,{" "}
+                  <code className="text-xs">WHATSAPP_APP_SECRET</code>
+                </p>
+                <p>
+                  <code className="text-xs">OPENAI_API_KEY</code>,{" "}
+                  <code className="text-xs">OPENAI_TRANSPORT_MODEL</code>,{" "}
+                  <code className="text-xs">AI_PROVIDER=openai</code>
+                </p>
+                <p>
+                  <code className="text-xs">GOOGLE_MAPS_API_KEY</code> (Places + Routes + Geocoding)
+                </p>
+                <p className="text-xs text-text-muted">
+                  Webhooks: <code className="text-xs">/integrations/whatsapp/webhook</code> or{" "}
+                  <code className="text-xs">/webhooks/whatsapp/webhook</code>
+                </p>
+              </div>
+            </Card>
+          ) : null}
+
+          {section !== "company" &&
+          section !== "pricing" &&
+          section !== "tracking" &&
+          section !== "integrations" ? (
             <Card>
               <h2 className="text-base font-semibold text-text">
                 {SECTIONS.find((s) => s.id === section)?.label}
