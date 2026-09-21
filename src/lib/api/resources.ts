@@ -138,6 +138,7 @@ export interface MemberDto {
   role: string;
   status: string;
   joinedAt: string;
+  temporaryPassword?: string;
   user: {
     id: string;
     firstName: string;
@@ -269,6 +270,48 @@ export function fetchEmployees(companyId: string, query?: ListQuery) {
   return apiList<EmployeeDto>(`/companies/${companyId}/employees`, query);
 }
 
+export function createEmployee(
+  companyId: string,
+  body: {
+    fullName: string;
+    phone: string;
+    email?: string;
+    employeeCode?: string;
+    department?: string;
+    canRequestTransport?: boolean;
+  },
+) {
+  return apiFetch<EmployeeDto>(`/companies/${companyId}/employees`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateEmployee(
+  companyId: string,
+  employeeId: string,
+  body: {
+    fullName?: string;
+    phone?: string;
+    email?: string | null;
+    employeeCode?: string | null;
+    department?: string | null;
+    canRequestTransport?: boolean;
+    status?: string;
+  },
+) {
+  return apiFetch<EmployeeDto>(`/companies/${companyId}/employees/${employeeId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+}
+
+export function deactivateEmployee(companyId: string, employeeId: string) {
+  return apiFetch<EmployeeDto>(`/companies/${companyId}/employees/${employeeId}/deactivate`, {
+    method: 'POST',
+  });
+}
+
 export function fetchRiders(companyId: string, query?: ListQuery) {
   return apiList<RiderDto>(`/companies/${companyId}/riders`, query);
 }
@@ -318,6 +361,57 @@ export function fetchTrips(companyId: string, query?: ListQuery) {
 
 export function fetchTrip(companyId: string, tripId: string) {
   return apiFetch<TripDto>(`/trips/${tripId}`, {}, { companyId });
+}
+
+export interface AssignmentCandidateDto {
+  rank: number;
+  riderId: string;
+  motorcycleId: string;
+  riderName: string;
+  riderPhone: string;
+  plateNumber: string;
+  distanceMeters: number;
+  durationSeconds?: number;
+  etaMinutes?: number;
+  latitude?: number;
+  longitude?: number;
+  locationAgeSeconds?: number;
+  recommended: boolean;
+}
+
+export interface AssignmentRecommendationsDto {
+  tripId: string;
+  method: string;
+  pickupAddress: string;
+  pickupLatitude: number;
+  pickupLongitude: number;
+  recommendedRiderId?: string;
+  candidates: AssignmentCandidateDto[];
+}
+
+export function fetchAssignmentCandidates(companyId: string, tripId: string) {
+  return apiFetch<AssignmentRecommendationsDto>(
+    `/companies/${companyId}/trips/${tripId}/assignment-candidates`,
+    {},
+    { companyId },
+  );
+}
+
+export function assignTrip(
+  companyId: string,
+  tripId: string,
+  body: { riderId: string; motorcycleId?: string; reason?: string },
+) {
+  return apiFetch<TripDto>(`/companies/${companyId}/trips/${tripId}/assign`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function redispatchTrip(companyId: string, tripId: string) {
+  return apiFetch<TripDto>(`/companies/${companyId}/trips/${tripId}/redispatch`, {
+    method: 'POST',
+  });
 }
 
 export function cancelTrip(companyId: string, tripId: string, reason?: string) {
@@ -450,10 +544,22 @@ export function createMember(
     email?: string;
     role: string;
     password?: string;
+    status?: string;
   },
 ) {
   return apiFetch<MemberDto>(`/companies/${companyId}/members`, {
     method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateMember(
+  companyId: string,
+  memberId: string,
+  body: { role?: string; status?: string },
+) {
+  return apiFetch<MemberDto>(`/companies/${companyId}/members/${memberId}`, {
+    method: 'PATCH',
     body: JSON.stringify(body),
   });
 }

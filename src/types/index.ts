@@ -24,6 +24,8 @@ export type RequestStatus =
   | "completed";
 
 export type TripStatus =
+  | "searching"
+  | "no_rider"
   | "assigned"
   | "to_pickup"
   | "waiting"

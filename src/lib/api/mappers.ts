@@ -43,11 +43,13 @@ function mapTripStatus(status: string): TripStatus {
   const s = status.toUpperCase();
   if (s.includes('COMPLETE')) return 'completed';
   if (s.includes('CANCEL')) return 'cancelled';
+  if (s.includes('NO_RIDER')) return 'no_rider';
   if (s.includes('IN_PROGRESS') || s.includes('STARTED')) return 'in_progress';
   if (s.includes('ARRIVED') || s.includes('WAITING')) return 'waiting';
   if (s.includes('TO_PICKUP') || s.includes('ACCEPTED')) return 'to_pickup';
-  if (s.includes('ASSIGN') || s.includes('SEARCH')) return 'assigned';
-  return 'assigned';
+  if (s.includes('SEARCH')) return 'searching';
+  if (s.includes('ASSIGN')) return 'assigned';
+  return 'searching';
 }
 
 function mapFleetStatus(status: string, tracking?: string): FleetStatus {

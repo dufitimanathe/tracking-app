@@ -5,6 +5,8 @@ type Tone =
   | "offline"
   | "online"
   | "reserved"
+  | "searching"
+  | "no_rider"
   | "assigned"
   | "to_pickup"
   | "waiting"
@@ -40,6 +42,7 @@ const toneStyles: Record<Tone, string> = {
   delayed: "bg-warning-soft text-warning border-amber-200",
   unpaid: "bg-warning-soft text-warning border-amber-200",
   warning: "bg-warning-soft text-warning border-amber-200",
+  searching: "bg-warning-soft text-warning border-amber-200",
   to_pickup: "bg-primary-soft text-primary border-blue-200",
   assigned: "bg-primary-soft text-primary border-blue-200",
   in_progress: "bg-primary-soft text-primary border-blue-200",
@@ -55,6 +58,7 @@ const toneStyles: Record<Tone, string> = {
   unauthorized: "bg-danger-soft text-danger border-red-200",
   gps_offline: "bg-danger-soft text-danger border-red-200",
   critical: "bg-danger-soft text-danger border-red-200",
+  no_rider: "bg-danger-soft text-danger border-red-200",
 };
 
 const labels: Partial<Record<Tone, string>> = {
@@ -62,6 +66,8 @@ const labels: Partial<Record<Tone, string>> = {
   offline: "Offline",
   online: "Online",
   reserved: "Reserved",
+  searching: "Searching",
+  no_rider: "No rider",
   assigned: "Assigned",
   to_pickup: "To Pickup",
   waiting: "Waiting",
@@ -98,6 +104,7 @@ const dotColors: Record<Tone, string> = {
   delayed: "bg-warning",
   unpaid: "bg-warning",
   warning: "bg-warning",
+  searching: "bg-warning",
   to_pickup: "bg-primary",
   assigned: "bg-primary",
   in_progress: "bg-primary",
@@ -113,6 +120,7 @@ const dotColors: Record<Tone, string> = {
   unauthorized: "bg-danger",
   gps_offline: "bg-danger",
   critical: "bg-danger",
+  no_rider: "bg-danger",
 };
 
 interface StatusBadgeProps {

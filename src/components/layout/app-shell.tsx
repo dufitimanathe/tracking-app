@@ -29,6 +29,7 @@ import { useEffect, useState } from "react";
 import { fetchNotifications } from "@/lib/api/resources";
 import { mapNotification } from "@/lib/api/mappers";
 import type { NotificationItem } from "@/types";
+import { useAdminRealtimeToasts } from "@/hooks/use-admin-realtime-toasts";
 
 function NavLink({
   item,
@@ -346,6 +347,8 @@ export function AppShell({
   const { sidebarOpen, sidebarCollapsed } = useAppSelector((s) => s.ui);
   const { role, companyId } = useAppSelector((s) => s.auth);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+
+  useAdminRealtimeToasts(role === "COMPANY_ADMIN" || role === "SUPERVISOR");
 
   useEffect(() => {
     if (!companyId) return;

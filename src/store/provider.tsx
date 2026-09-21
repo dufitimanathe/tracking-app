@@ -1,9 +1,14 @@
 "use client";
 
+import { ToastProvider } from "@/components/ui/toast";
 import { store } from "@/store";
-import { Provider } from "react-redux";
 import type { ReactNode } from "react";
+import { Provider } from "react-redux";
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  return <Provider store={store}>{children}</Provider>;
+  return (
+    <Provider store={store}>
+      <ToastProvider>{children}</ToastProvider>
+    </Provider>
+  );
 }

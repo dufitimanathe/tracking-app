@@ -14,6 +14,7 @@ import {
   fetchRiders,
   markRiderUnavailable,
   updateRider,
+  updateRiderAvailability,
   type RiderDto,
 } from "@/lib/api/resources";
 import { useAppSelector } from "@/store";
@@ -330,6 +331,32 @@ export default function RidersPage() {
                             onClick={() => openEdit(r)}
                           >
                             Edit profile
+                          </button>
+                          <button
+                            type="button"
+                            className="w-full px-3 py-2 text-left text-sm text-text hover:bg-surface-muted disabled:opacity-40"
+                            disabled={
+                              r.availabilityStatus === "AVAILABLE" ||
+                              r.status !== "ACTIVE" ||
+                              busy
+                            }
+                            onClick={() => {
+                              if (!companyId) return;
+                              setBusy(true);
+                              setMenuOpenId(null);
+                              void updateRiderAvailability(companyId, r.id, "AVAILABLE")
+                                .then(() => load())
+                                .catch((err) =>
+                                  setError(
+                                    err instanceof Error
+                                      ? err.message
+                                      : "Could not set available (assign a motorcycle first)",
+                                  ),
+                                )
+                                .finally(() => setBusy(false));
+                            }}
+                          >
+                            Set available
                           </button>
                           <button
                             type="button"
