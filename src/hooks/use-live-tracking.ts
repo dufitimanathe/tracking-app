@@ -284,6 +284,10 @@ export function useLiveTracking(companyId?: string) {
             patch.plateNumber !== undefined
               ? patch.plateNumber
               : (current?.plateNumber ?? null),
+          placeName:
+            patch.placeName !== undefined
+              ? patch.placeName
+              : (current?.placeName ?? null),
         };
         return {
           ...prev,

@@ -79,7 +79,9 @@ function riderToMotorcycle(r: LiveRiderState): Motorcycle {
     mapStatus: r.markerStatus,
     riderId: r.riderId,
     riderName: r.riderName ?? undefined,
-    location: `${r.latitude.toFixed(4)}, ${r.longitude.toFixed(4)}`,
+    location: r.placeName?.trim()
+      ? r.placeName
+      : `${r.latitude.toFixed(4)}, ${r.longitude.toFixed(4)}`,
     lat: r.latitude,
     lng: r.longitude,
     speed: Math.round(kmh * 10) / 10,
@@ -446,6 +448,13 @@ export function LiveTrackingView({
                   <Detail
                     label="Today"
                     value={formatKm(selectedRider.distanceTodayMeters / 1000)}
+                  />
+                  <Detail
+                    label="Place"
+                    value={
+                      selectedRider.placeName?.trim() ||
+                      `${selectedRider.latitude.toFixed(5)}, ${selectedRider.longitude.toFixed(5)}`
+                    }
                   />
                   <Detail label="Presence" value={selectedRider.presence} />
                   <Detail

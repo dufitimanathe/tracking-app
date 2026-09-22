@@ -40,6 +40,7 @@ export interface LiveDriverStateDto {
   riderName?: string | null;
   phone?: string | null;
   plateNumber?: string | null;
+  placeName?: string | null;
 }
 
 export interface TrackingCompanyStatsDto {
