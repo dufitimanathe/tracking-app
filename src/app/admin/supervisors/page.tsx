@@ -14,6 +14,7 @@ import {
   type MemberDto,
 } from "@/lib/api/resources";
 import { mapMemberToSupervisor } from "@/lib/api/mappers";
+import { isValidEmail, isValidRwandaPhone, normalizeRwandaPhone } from "@/lib/validation/rwanda";
 import { useAppSelector } from "@/store";
 import type { Supervisor } from "@/types";
 import { Plus } from "lucide-react";
@@ -30,14 +31,13 @@ export default function SupervisorsPage() {
   const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [inviteHint, setInviteHint] = useState<string | null>(null);
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
     email: "",
     phone: "",
     role: "SUPERVISOR",
-    password: "",
   });
 
   const load = useCallback(async () => {
@@ -47,7 +47,10 @@ export default function SupervisorsPage() {
     try {
       const result = await fetchMembers(companyId, { page, limit: 20 });
       const supervisors = result.items.filter(
-        (m) => m.role === "SUPERVISOR" || m.role === "COMPANY_ADMIN",
+        (m) =>
+          m.role === "SUPERVISOR" ||
+          m.role === "ACCOUNTANT" ||
+          m.role === "COMPANY_ADMIN",
       );
       setRawMembers(supervisors);
       setItems(supervisors.map(mapMemberToSupervisor));
@@ -71,34 +74,41 @@ export default function SupervisorsPage() {
       email: "",
       phone: "",
       role: "SUPERVISOR",
-      password: "",
     });
-    setTempPassword(null);
+    setInviteHint(null);
     setAddOpen(true);
   }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!companyId) return;
-    if (!form.email.trim() && !form.phone.trim()) {
-      setError("Email or phone is required");
+    const email = form.email.trim().toLowerCase();
+    if (!isValidEmail(email)) {
+      setError("Enter a valid email address.");
       return;
+    }
+    let phone: string | undefined;
+    if (form.phone.trim()) {
+      if (!isValidRwandaPhone(form.phone)) {
+        setError("Phone must be a valid Rwanda number (e.g. 0788123456 or +250788123456).");
+        return;
+      }
+      phone = normalizeRwandaPhone(form.phone) ?? undefined;
     }
     setBusy(true);
     setError(null);
     try {
-      const member = await createMember(companyId, {
+      await createMember(companyId, {
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
-        email: form.email.trim() || undefined,
-        phone: form.phone.trim() || undefined,
+        email,
+        phone,
         role: form.role,
-        password: form.password.trim() || undefined,
-        status: "ACTIVE",
+        status: "INVITED",
       });
-      if (member.temporaryPassword) {
-        setTempPassword(member.temporaryPassword);
-      }
+      setInviteHint(
+        `Invite sent to ${email}. They must open the activation email (phone or PC), set a password, then sign in.`,
+      );
       setAddOpen(false);
       await load();
     } catch (err) {
@@ -124,8 +134,8 @@ export default function SupervisorsPage() {
   return (
     <div className="space-y-4 sm:space-y-5 max-w-[1200px] mx-auto">
       <PageHeader
-        title="Supervisors & admins"
-        description="Invite staff who can approve requests and assign riders. They can log in with email + password."
+        title="Supervisors & accountants"
+        description="Invite ops supervisors (riders, fleet, requests) or accountants (billing, trips, money). Only company admins can add users."
         actions={
           <Button type="button" onClick={openAdd}>
             <Plus className="size-4" />
@@ -134,11 +144,8 @@ export default function SupervisorsPage() {
         }
       />
 
-      {tempPassword ? (
-        <p className="text-sm rounded-[8px] px-3 py-2 bg-warning-soft text-warning">
-          Account created. Temporary password: <strong>{tempPassword}</strong> — share securely so
-          they can log in.
-        </p>
+      {inviteHint ? (
+        <p className="text-sm rounded-[8px] px-3 py-2 bg-success-soft text-success">{inviteHint}</p>
       ) : null}
 
       {error ? (
@@ -149,7 +156,7 @@ export default function SupervisorsPage() {
         {loading ? (
           <EmptyState title="Loading…" />
         ) : items.length === 0 ? (
-          <EmptyState title="No supervisors found on this page" />
+          <EmptyState title="No staff members found on this page" />
         ) : (
           <ul className="divide-y divide-border">
             {items.map((s, idx) => {
@@ -199,7 +206,7 @@ export default function SupervisorsPage() {
         </div>
       </Card>
 
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Invite supervisor / admin">
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Invite supervisor / accountant">
         <form className="space-y-3" onSubmit={onSubmit}>
           <div className="grid grid-cols-2 gap-3">
             <Field label="First name">
@@ -217,15 +224,16 @@ export default function SupervisorsPage() {
               />
             </Field>
           </div>
-          <Field label="Email">
+          <Field label="Email" hint="Required — invite + activation sent here">
             <Input
               type="email"
+              required
               value={form.email}
               onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
               placeholder="name@company.com"
             />
           </Field>
-          <Field label="Phone">
+          <Field label="Phone (Rwanda)" hint="Optional · 0788… or +250788…">
             <Input
               value={form.phone}
               onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
@@ -238,24 +246,20 @@ export default function SupervisorsPage() {
               value={form.role}
               onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
             >
-              <option value="SUPERVISOR">Supervisor</option>
-              <option value="COMPANY_ADMIN">Company admin</option>
+              <option value="SUPERVISOR">Supervisor — riders, fleet, requests</option>
+              <option value="ACCOUNTANT">Accountant — trips, billing, invoices</option>
             </select>
           </Field>
-          <Field label="Password (optional — temp generated if blank)">
-            <Input
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-              placeholder="Min 8 chars, upper/lower/number"
-            />
-          </Field>
+          <p className="text-xs text-text-muted">
+            They receive an activation email (not a shared dashboard link). After activating on
+            phone or PC, they sign in with email + their own password. No OTP.
+          </p>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="ghost" onClick={() => setAddOpen(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy ? "Creating…" : "Create & activate"}
+              {busy ? "Sending invite…" : "Send activation email"}
             </Button>
           </div>
         </form>

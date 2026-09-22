@@ -64,12 +64,19 @@ export default function NewMotorcyclePage() {
     setSaving(true);
     setError(null);
     try {
+      const yearNum = form.year ? Number(form.year) : undefined;
+      const maxYear = new Date().getFullYear() + 5;
+      if (yearNum != null && (yearNum < 1980 || yearNum > maxYear)) {
+        setError(`Year must be between 1980 and ${maxYear}.`);
+        setSaving(false);
+        return;
+      }
       const moto = await createMotorcycle(companyId, {
         plateNumber: form.plate.trim(),
         internalCode: form.fleetNumber.trim() || undefined,
         brand: form.brand || undefined,
         model: form.model.trim() || undefined,
-        year: form.year ? Number(form.year) : undefined,
+        year: yearNum,
         color: form.color || undefined,
       });
       if (form.riderId) {
@@ -150,11 +157,11 @@ export default function NewMotorcyclePage() {
         <Card>
           <h2 className="text-sm font-semibold text-text mb-4">Specs</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Year">
+            <Field label="Year" hint={`1980 – ${new Date().getFullYear() + 5}`}>
               <Input
                 type="number"
-                min={2015}
-                max={2030}
+                min={1980}
+                max={new Date().getFullYear() + 5}
                 value={form.year}
                 onChange={(e) => update("year", e.target.value)}
               />

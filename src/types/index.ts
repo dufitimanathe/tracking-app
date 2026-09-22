@@ -1,6 +1,7 @@
 export type UserRole =
   | "COMPANY_ADMIN"
   | "SUPERVISOR"
+  | "ACCOUNTANT"
   | "RIDER"
   | "EMPLOYEE"
   | "PLATFORM_ADMIN";

@@ -1,4 +1,5 @@
 import { appConfig } from '@/lib/config';
+import { refreshTokens } from '@/lib/api/auth-refresh';
 
 export class ApiError extends Error {
   constructor(
@@ -42,35 +43,82 @@ export interface ListQuery {
 const ACCESS_KEY = 'fleetops_access_token';
 const REFRESH_KEY = 'fleetops_refresh_token';
 const COMPANY_KEY = 'fleetops_company_id';
+const REMEMBER_KEY = 'fleetops_remember_me';
+
+function storageForRemember(): Storage | null {
+  if (typeof window === 'undefined') return null;
+  return isRememberMeEnabled() ? window.localStorage : window.sessionStorage;
+}
+
+export function isRememberMeEnabled(): boolean {
+  if (typeof window === 'undefined') return true;
+  return window.localStorage.getItem(REMEMBER_KEY) !== '0';
+}
+
+export function setRememberMe(enabled: boolean): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(REMEMBER_KEY, enabled ? '1' : '0');
+}
 
 export function getAccessToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(ACCESS_KEY);
+  return (
+    window.localStorage.getItem(ACCESS_KEY) ?? window.sessionStorage.getItem(ACCESS_KEY)
+  );
 }
 
 export function getRefreshToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(REFRESH_KEY);
+  return (
+    window.localStorage.getItem(REFRESH_KEY) ?? window.sessionStorage.getItem(REFRESH_KEY)
+  );
 }
 
 export function getStoredCompanyId(): string | null {
   if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(COMPANY_KEY);
+  return (
+    window.localStorage.getItem(COMPANY_KEY) ?? window.sessionStorage.getItem(COMPANY_KEY)
+  );
 }
 
 export function setStoredCompanyId(companyId: string | null): void {
   if (typeof window === 'undefined') return;
-  if (companyId) window.localStorage.setItem(COMPANY_KEY, companyId);
-  else window.localStorage.removeItem(COMPANY_KEY);
+  const primary = storageForRemember();
+  const secondary =
+    primary === window.localStorage ? window.sessionStorage : window.localStorage;
+  if (!primary) return;
+  if (companyId) {
+    primary.setItem(COMPANY_KEY, companyId);
+    secondary.removeItem(COMPANY_KEY);
+  } else {
+    window.localStorage.removeItem(COMPANY_KEY);
+    window.sessionStorage.removeItem(COMPANY_KEY);
+  }
 }
 
 export function setTokens(access: string | null, refresh?: string | null): void {
   if (typeof window === 'undefined') return;
-  if (access) window.localStorage.setItem(ACCESS_KEY, access);
-  else window.localStorage.removeItem(ACCESS_KEY);
+  const primary = storageForRemember();
+  const secondary =
+    primary === window.localStorage ? window.sessionStorage : window.localStorage;
+  if (!primary) return;
+
+  if (access) {
+    primary.setItem(ACCESS_KEY, access);
+    secondary.removeItem(ACCESS_KEY);
+  } else {
+    window.localStorage.removeItem(ACCESS_KEY);
+    window.sessionStorage.removeItem(ACCESS_KEY);
+  }
+
   if (refresh === undefined) return;
-  if (refresh) window.localStorage.setItem(REFRESH_KEY, refresh);
-  else window.localStorage.removeItem(REFRESH_KEY);
+  if (refresh) {
+    primary.setItem(REFRESH_KEY, refresh);
+    secondary.removeItem(REFRESH_KEY);
+  } else {
+    window.localStorage.removeItem(REFRESH_KEY);
+    window.sessionStorage.removeItem(REFRESH_KEY);
+  }
 }
 
 /** @deprecated use setTokens */
@@ -83,6 +131,14 @@ export function clearSession(): void {
   setStoredCompanyId(null);
 }
 
+function redirectToLogin(): void {
+  if (typeof window === 'undefined') return;
+  const path = `${window.location.pathname}${window.location.search}`;
+  if (path.startsWith('/login') || path.startsWith('/activate')) return;
+  const redirect = encodeURIComponent(path);
+  window.location.href = `/login?redirect=${redirect}`;
+}
+
 function buildQuery(query?: ListQuery): string {
   if (!query) return '';
   const params = new URLSearchParams();
@@ -92,6 +148,31 @@ function buildQuery(query?: ListQuery): string {
   });
   const qs = params.toString();
   return qs ? `?${qs}` : '';
+}
+
+let refreshPromise: Promise<boolean> | null = null;
+
+async function tryRefreshSession(): Promise<boolean> {
+  if (!isRememberMeEnabled()) return false;
+  const refresh = getRefreshToken();
+  if (!refresh) return false;
+
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      try {
+        const tokens = await refreshTokens(refresh);
+        setTokens(tokens.accessToken, tokens.refreshToken);
+        return true;
+      } catch {
+        clearSession();
+        return false;
+      } finally {
+        refreshPromise = null;
+      }
+    })();
+  }
+
+  return refreshPromise;
 }
 
 export async function apiFetch<T>(
@@ -106,7 +187,7 @@ export async function apiFetch<T>(
 export async function apiFetchRaw<T>(
   path: string,
   init: RequestInit = {},
-  options?: { companyId?: string | null; skipAuth?: boolean },
+  options?: { companyId?: string | null; skipAuth?: boolean; _retried?: boolean },
 ): Promise<{ data: T; meta?: PaginationMeta & Record<string, unknown> }> {
   const headers = new Headers(init.headers);
   if (!headers.has('Content-Type') && init.body) {
@@ -133,6 +214,20 @@ export async function apiFetchRaw<T>(
     payload = (await response.json()) as ApiEnvelope<T>;
   } catch {
     // non-JSON
+  }
+
+  if (response.status === 401 && !options?.skipAuth && !options?._retried) {
+    const refreshed = await tryRefreshSession();
+    if (refreshed) {
+      return apiFetchRaw<T>(path, init, { ...options, _retried: true });
+    }
+    clearSession();
+    redirectToLogin();
+    throw new ApiError(
+      payload?.error?.message ?? 'Session expired. Please sign in again.',
+      401,
+      payload?.error?.code,
+    );
   }
 
   if (!response.ok) {

@@ -524,15 +524,17 @@ export function createRider(
     firstName: string;
     lastName: string;
     phone: string;
-    email?: string;
+    email: string;
     licenseNumber?: string;
     password?: string;
   },
 ) {
-  return apiFetch<RiderDto & { temporaryPassword?: string }>(
-    `/companies/${companyId}/riders`,
-    { method: 'POST', body: JSON.stringify(body) },
-  );
+  return apiFetch<
+    RiderDto & { temporaryPassword?: string; inviteSent?: boolean; activationToken?: string }
+  >(`/companies/${companyId}/riders`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
 }
 
 export function createMember(

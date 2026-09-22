@@ -2,8 +2,13 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Field, Input } from "@/components/ui/input";
+import { Field, Input, PasswordInput } from "@/components/ui/input";
 import { saveAdminDraft } from "@/lib/onboarding-draft";
+import {
+  isValidEmail,
+  isValidRwandaPhone,
+  normalizeRwandaPhone,
+} from "@/lib/validation/rwanda";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -26,15 +31,31 @@ export default function RegisterPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    if (!isValidEmail(form.email)) {
+      setError("Enter a valid work email address.");
+      return;
+    }
+    if (!isValidRwandaPhone(form.phone)) {
+      setError("Phone must be a valid Rwanda mobile (e.g. 0788123456 or +250788123456).");
+      return;
+    }
     if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(form.password)) {
       setError("Password must include uppercase, lowercase, and a number.");
       return;
     }
+
+    const phone = normalizeRwandaPhone(form.phone);
+    if (!phone) {
+      setError("Phone must be a valid Rwanda mobile number.");
+      return;
+    }
+
     saveAdminDraft({
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim(),
       email: form.email.trim(),
-      phone: form.phone.trim(),
+      phone,
       password: form.password,
     });
     router.push("/onboarding/company");
@@ -85,7 +106,10 @@ export default function RegisterPage() {
                 required
               />
             </Field>
-            <Field label="Phone">
+            <Field
+              label="Phone"
+              hint="Rwanda mobile · 0788… or +250788…"
+            >
               <Input
                 type="tel"
                 value={form.phone}
@@ -98,10 +122,10 @@ export default function RegisterPage() {
               label="Password"
               hint="8+ chars with upper, lower, and a number"
             >
-              <Input
-                type="password"
+              <PasswordInput
                 value={form.password}
                 onChange={(e) => update("password", e.target.value)}
+                autoComplete="new-password"
                 required
                 minLength={8}
               />

@@ -19,7 +19,7 @@ import { clearSession, setHydrated, setSession } from '@/store/slices/auth-slice
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 
-const PUBLIC_PREFIXES = ['/login', '/register', '/forgot-password', '/onboarding'];
+const PUBLIC_PREFIXES = ['/login', '/register', '/forgot-password', '/onboarding', '/activate'];
 
 export function AuthBootstrap({ children }: { children: ReactNode }) {
   const dispatch = useAppDispatch();
@@ -81,7 +81,8 @@ export function AuthBootstrap({ children }: { children: ReactNode }) {
     const isPublic = PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
     if (!isAuthenticated && !isPublic) {
-      router.replace('/login');
+      const redirect = encodeURIComponent(`${pathname}`);
+      router.replace(`/login?redirect=${redirect}`);
       return;
     }
 

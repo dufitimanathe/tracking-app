@@ -6,7 +6,7 @@ import { Field, Input, SearchInput } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
 import { EmptyState, PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Modal } from "@/components/ui/overlay";
+import { Modal, FloatingMenu } from "@/components/ui/overlay";
 import {
   createRider,
   deactivateRider,
@@ -17,6 +17,7 @@ import {
   updateRiderAvailability,
   type RiderDto,
 } from "@/lib/api/resources";
+import { isValidRwandaPhone, normalizeRwandaPhone } from "@/lib/validation/rwanda";
 import { useAppSelector } from "@/store";
 import { Bike, MoreHorizontal, Phone, Plus, Smartphone, Users } from "lucide-react";
 import Link from "next/link";
@@ -81,7 +82,9 @@ export default function RidersPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [editRider, setEditRider] = useState<RiderDto | null>(null);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [inviteSentTo, setInviteSentTo] = useState<string | null>(null);
+  const [activationToken, setActivationToken] = useState<string | null>(null);
+  const menuAnchorRef = useRef<HTMLButtonElement | null>(null);
 
   const [form, setForm] = useState({
     firstName: "",
@@ -116,16 +119,6 @@ export default function RidersPage() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (!menuRef.current?.contains(e.target as Node)) {
-        setMenuOpenId(null);
-      }
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
-
   function openAdd() {
     setForm({
       firstName: "",
@@ -135,6 +128,8 @@ export default function RidersPage() {
       licenseNumber: "",
     });
     setTempPassword(null);
+    setInviteSentTo(null);
+    setActivationToken(null);
     setAddOpen(true);
   }
 
@@ -153,18 +148,38 @@ export default function RidersPage() {
   async function onCreate(e: FormEvent) {
     e.preventDefault();
     if (!companyId) return;
+    if (!isValidRwandaPhone(form.phone)) {
+      setError("Phone must be a valid Rwanda mobile (e.g. 0788123456 or +250788123456).");
+      return;
+    }
+    const phone = normalizeRwandaPhone(form.phone);
+    if (!phone) {
+      setError("Phone must be a valid Rwanda mobile number.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
+      if (!form.email.trim()) {
+        setError("Email is required so the rider can activate the FleetOps mobile app.");
+        setBusy(false);
+        return;
+      }
       const created = await createRider(companyId, {
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
-        phone: form.phone.trim(),
-        email: form.email.trim() || undefined,
+        phone,
+        email: form.email.trim(),
         licenseNumber: form.licenseNumber.trim() || undefined,
       });
-      if (created.temporaryPassword) {
+      if (created.inviteSent) {
+        setInviteSentTo(form.email.trim());
+        setActivationToken(created.activationToken ?? null);
+        setTempPassword(null);
+      } else if (created.temporaryPassword) {
         setTempPassword(created.temporaryPassword);
+        setInviteSentTo(null);
+        setActivationToken(null);
       } else {
         setAddOpen(false);
       }
@@ -179,13 +194,22 @@ export default function RidersPage() {
   async function onUpdate(e: FormEvent) {
     e.preventDefault();
     if (!companyId || !editRider) return;
+    if (!isValidRwandaPhone(form.phone)) {
+      setError("Phone must be a valid Rwanda mobile (e.g. 0788123456 or +250788123456).");
+      return;
+    }
+    const phone = normalizeRwandaPhone(form.phone);
+    if (!phone) {
+      setError("Phone must be a valid Rwanda mobile number.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       await updateRider(companyId, editRider.id, {
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
-        phone: form.phone.trim(),
+        phone,
         licenseNumber: form.licenseNumber.trim() || null,
       });
       setEditRider(null);
@@ -308,25 +332,28 @@ export default function RidersPage() {
                       status={r.status === "ACTIVE" ? "online" : "offline"}
                       label={r.status.toLowerCase()}
                     />
-                    <div
-                      className="relative"
-                      ref={menuOpenId === r.id ? menuRef : undefined}
-                    >
+                    <div className="relative">
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         aria-label={`Manage ${name}`}
-                        onClick={() =>
-                          setMenuOpenId((id) => (id === r.id ? null : r.id))
-                        }
+                        aria-expanded={menuOpenId === r.id}
+                        onClick={(e) => {
+                          menuAnchorRef.current = e.currentTarget;
+                          setMenuOpenId((id) => (id === r.id ? null : r.id));
+                        }}
                       >
                         <MoreHorizontal className="size-4" />
                       </Button>
-                      {menuOpenId === r.id ? (
-                        <div className="absolute right-0 z-20 mt-1 w-52 rounded-[10px] border border-border bg-surface py-1 shadow-[var(--shadow-overlay)]">
+                      <FloatingMenu
+                        open={menuOpenId === r.id}
+                        onClose={() => setMenuOpenId(null)}
+                        anchorRef={menuAnchorRef}
+                      >
                           <button
                             type="button"
+                            role="menuitem"
                             className="w-full px-3 py-2 text-left text-sm text-text hover:bg-surface-muted"
                             onClick={() => openEdit(r)}
                           >
@@ -334,6 +361,7 @@ export default function RidersPage() {
                           </button>
                           <button
                             type="button"
+                            role="menuitem"
                             className="w-full px-3 py-2 text-left text-sm text-text hover:bg-surface-muted disabled:opacity-40"
                             disabled={
                               r.availabilityStatus === "AVAILABLE" ||
@@ -360,6 +388,7 @@ export default function RidersPage() {
                           </button>
                           <button
                             type="button"
+                            role="menuitem"
                             className="w-full px-3 py-2 text-left text-sm text-text hover:bg-surface-muted disabled:opacity-40"
                             disabled={
                               r.availabilityStatus === "OFFLINE" ||
@@ -374,6 +403,7 @@ export default function RidersPage() {
                           </button>
                           <button
                             type="button"
+                            role="menuitem"
                             className="w-full px-3 py-2 text-left text-sm text-text hover:bg-surface-muted disabled:opacity-40"
                             disabled={r.status !== "ACTIVE"}
                             onClick={() => {
@@ -385,6 +415,7 @@ export default function RidersPage() {
                           </button>
                           <button
                             type="button"
+                            role="menuitem"
                             className="w-full px-3 py-2 text-left text-sm text-danger hover:bg-danger-soft"
                             onClick={() => {
                               setConfirm({ action: "delete", rider: r });
@@ -393,8 +424,7 @@ export default function RidersPage() {
                           >
                             Delete
                           </button>
-                        </div>
-                      ) : null}
+                      </FloatingMenu>
                     </div>
                   </div>
                 </li>
@@ -413,16 +443,20 @@ export default function RidersPage() {
           if (!busy) {
             setAddOpen(false);
             setTempPassword(null);
+            setInviteSentTo(null);
+            setActivationToken(null);
           }
         }}
         title="Add rider"
-        description="Create a rider profile. Location will come from their phone once they use the rider app."
+        description="Sends an activation email with a copy-paste token. The rider sets a password in the browser or FleetOps app, then goes Online for GPS."
         footer={
-          tempPassword ? (
+          tempPassword || inviteSentTo ? (
             <Button
               onClick={() => {
                 setAddOpen(false);
                 setTempPassword(null);
+                setInviteSentTo(null);
+                setActivationToken(null);
               }}
             >
               Done
@@ -433,13 +467,30 @@ export default function RidersPage() {
                 Cancel
               </Button>
               <Button form="add-rider-form" type="submit" disabled={busy}>
-                {busy ? "Saving…" : "Add rider"}
+                {busy ? "Sending invite…" : "Send invite email"}
               </Button>
             </>
           )
         }
       >
-        {tempPassword ? (
+        {inviteSentTo ? (
+          <div className="space-y-3">
+            <p className="text-sm text-text-secondary">
+              Activation email sent to <strong>{inviteSentTo}</strong>. They enter the
+              6-character code in FleetOps → Activate account (or open the email link).
+            </p>
+            {activationToken ? (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-text-muted uppercase tracking-wide">
+                  Activation code
+                </p>
+                <p className="rounded-[8px] bg-surface-muted px-3 py-3 font-mono text-2xl font-semibold tracking-[0.35em] text-center text-text select-all">
+                  {activationToken}
+                </p>
+              </div>
+            ) : null}
+          </div>
+        ) : tempPassword ? (
           <div className="space-y-2">
             <p className="text-sm text-text-secondary">
               Rider created. Share this temporary password so they can sign in:
@@ -466,17 +517,21 @@ export default function RidersPage() {
                 />
               </Field>
             </div>
-            <Field label="Phone" hint="Used for login and phone tracking">
+            <Field label="Phone" hint="Rwanda mobile · 0788… or +250788…">
               <Input
                 required
                 type="tel"
-                placeholder="+250788000000"
+                placeholder="+250 788 000 000"
                 value={form.phone}
                 onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
               />
             </Field>
-            <Field label="Email" hint="Optional">
+            <Field
+              label="Email"
+              hint="Required — activation opens the FleetOps phone app"
+            >
               <Input
+                required
                 type="email"
                 value={form.email}
                 onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
@@ -527,10 +582,11 @@ export default function RidersPage() {
               />
             </Field>
           </div>
-          <Field label="Phone">
+          <Field label="Phone" hint="Rwanda mobile · 0788… or +250788…">
             <Input
               required
               type="tel"
+              placeholder="+250 788 000 000"
               value={form.phone}
               onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
             />

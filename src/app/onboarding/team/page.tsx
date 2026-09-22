@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
 import { createMember, createRider, updateOnboarding } from "@/lib/api/resources";
+import { isValidRwandaPhone, normalizeRwandaPhone } from "@/lib/validation/rwanda";
 import { useAppSelector } from "@/store";
 import { SkipForward, UserPlus, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -44,6 +45,15 @@ export default function OnboardingTeamPage() {
   async function invite(e: React.FormEvent) {
     e.preventDefault();
     if (!companyId) return;
+    if (!isValidRwandaPhone(phone)) {
+      setError("Phone must be a valid Rwanda mobile (e.g. 0788123456 or +250788123456).");
+      return;
+    }
+    const normalizedPhone = normalizeRwandaPhone(phone);
+    if (!normalizedPhone) {
+      setError("Phone must be a valid Rwanda mobile number.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -54,16 +64,21 @@ export default function OnboardingTeamPage() {
         await createMember(companyId, {
           firstName: f,
           lastName: l,
-          phone: phone.trim() || undefined,
+          phone: normalizedPhone,
           email: email.trim() || undefined,
           role: "SUPERVISOR",
         });
       } else {
+        if (!email.trim()) {
+          setError("Email is required so the rider can activate the FleetOps mobile app.");
+          setLoading(false);
+          return;
+        }
         await createRider(companyId, {
           firstName: f,
           lastName: l,
-          phone: phone.trim(),
-          email: email.trim() || undefined,
+          phone: normalizedPhone,
+          email: email.trim(),
         });
       }
       await finish(true);
@@ -80,7 +95,9 @@ export default function OnboardingTeamPage() {
         <div className="mb-6">
           <h1 className="text-xl font-semibold text-text tracking-tight">{title}</h1>
           <p className="mt-1 text-sm text-text-secondary">
-            They&apos;ll join your workspace with a generated temporary password.
+            {mode === "rider"
+              ? "They get a mobile activation email, set a password in the FleetOps app, then go Online for GPS."
+              : "They get a browser activation email, set a password, then sign in on web."}
           </p>
         </div>
 
@@ -101,7 +118,7 @@ export default function OnboardingTeamPage() {
               />
             </Field>
           </div>
-          <Field label="Phone">
+          <Field label="Phone" hint="Rwanda mobile · 0788… or +250788…">
             <Input
               type="tel"
               value={phone}
@@ -110,11 +127,19 @@ export default function OnboardingTeamPage() {
               required
             />
           </Field>
-          <Field label="Email" hint="Optional">
+          <Field
+            label="Email"
+            hint={
+              mode === "rider"
+                ? "Required — activation opens the FleetOps phone app"
+                : "Required for supervisor invite"
+            }
+          >
             <Input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              required
             />
           </Field>
 

@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, MetricCard } from "@/components/ui/card";
-import { Field, Input, SearchInput } from "@/components/ui/input";
+import { Field, Input, PasswordInput, SearchInput } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
 import { EmptyState, PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -16,6 +16,7 @@ import {
   type EmployeeDto,
 } from "@/lib/api/resources";
 import { mapEmployee } from "@/lib/api/mappers";
+import { isValidRwandaPhone, normalizeRwandaPhone } from "@/lib/validation/rwanda";
 import { useAppSelector } from "@/store";
 import type { Employee } from "@/types";
 import { Building2, Plus, Users } from "lucide-react";
@@ -104,13 +105,22 @@ export default function EmployeesPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!companyId) return;
+    if (!isValidRwandaPhone(form.phone)) {
+      setError("Phone must be a valid Rwanda mobile (e.g. 0788123456 or +250788123456).");
+      return;
+    }
+    const phone = normalizeRwandaPhone(form.phone);
+    if (!phone) {
+      setError("Phone must be a valid Rwanda mobile number.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       if (editItem) {
         await updateEmployee(companyId, editItem.id, {
           fullName: form.fullName.trim(),
-          phone: form.phone.trim(),
+          phone,
           email: form.email.trim() || null,
           employeeCode: form.employeeCode.trim() || null,
           department: form.department.trim() || null,
@@ -118,7 +128,7 @@ export default function EmployeesPage() {
       } else {
         await createEmployee(companyId, {
           fullName: form.fullName.trim(),
-          phone: form.phone.trim(),
+          phone,
           email: form.email.trim() || undefined,
           employeeCode: form.employeeCode.trim() || undefined,
           department: form.department.trim() || undefined,
@@ -131,7 +141,7 @@ export default function EmployeesPage() {
             firstName: firstName || form.fullName.trim(),
             lastName: rest.join(" ") || "Employee",
             email: form.email.trim(),
-            phone: form.phone.trim(),
+            phone,
             role: "EMPLOYEE",
             password: form.password.trim() || undefined,
             status: "ACTIVE",
@@ -265,12 +275,13 @@ export default function EmployeesPage() {
               onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))}
             />
           </Field>
-          <Field label="Phone">
+          <Field label="Phone" hint="Rwanda mobile · 0788… or +250788…">
             <Input
               required
+              type="tel"
               value={form.phone}
               onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-              placeholder="+2507…"
+              placeholder="+250 788 000 000"
             />
           </Field>
           <Field label="Email">
@@ -306,11 +317,11 @@ export default function EmployeesPage() {
           ) : null}
           {form.createLogin && !editItem ? (
             <Field label="Password (optional — temp generated if blank)">
-              <Input
-                type="password"
+              <PasswordInput
                 value={form.password}
                 onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
                 placeholder="Min 8 chars, upper/lower/number"
+                autoComplete="new-password"
               />
             </Field>
           ) : null}

@@ -56,16 +56,16 @@ export const riderUser: AppUser = {
 };
 
 export const dashboardStats: DashboardStats = {
-  activeTrips: 12,
-  availableRiders: 18,
-  totalRiders: 27,
-  pendingRequests: 4,
-  motorcyclesOnline: 31,
-  totalMotorcycles: 34,
-  tripsToday: 46,
-  completedToday: 31,
-  distanceTodayKm: 428,
-  transportCostToday: 186400,
+  activeTrips: 0,
+  availableRiders: 0,
+  totalRiders: 0,
+  pendingRequests: 0,
+  motorcyclesOnline: 0,
+  totalMotorcycles: 0,
+  tripsToday: 0,
+  completedToday: 0,
+  distanceTodayKm: 0,
+  transportCostToday: 0,
 };
 
 export const motorcycles: Motorcycle[] = [
@@ -424,83 +424,7 @@ export const requests: TransportRequest[] = [
   },
 ];
 
-export const trips: Trip[] = [
-  {
-    id: "TRIP-2381",
-    requestId: "REQ-2838",
-    employeeName: "Diane Ishimwe",
-    employeePhone: "+250 788 500 600",
-    riderName: "David Kalisa",
-    motorcyclePlate: "RAH 220K",
-    pickup: "Nyarutarama",
-    destination: "Gisozi",
-    status: "to_pickup",
-    distanceKm: 4.2,
-    cost: 1780,
-    currentSpeed: 18,
-    etaMin: 9,
-    requestedAt: "Today, 9:10 AM",
-    assignedAt: "Today, 9:20 AM",
-  },
-  {
-    id: "TRIP-2379",
-    employeeName: "Alice Uwimana",
-    employeePhone: "+250 788 100 200",
-    riderName: "Jean Claude",
-    motorcyclePlate: "RAE 428C",
-    pickup: "Kimironko",
-    destination: "Kacyiru",
-    status: "in_progress",
-    startedAt: "Today, 7:51 AM",
-    distanceKm: 3.8,
-    cost: 1620,
-    durationMin: 14,
-    currentSpeed: 34,
-    etaMin: 6,
-    requestedAt: "Today, 7:30 AM",
-    assignedAt: "Today, 7:35 AM",
-    pickupAt: "Today, 7:48 AM",
-  },
-  {
-    id: "TRIP-2370",
-    employeeName: "Kevin Niyonzima",
-    riderName: "Eric N.",
-    motorcyclePlate: "RAD 103B",
-    pickup: "Kicukiro",
-    destination: "Remera",
-    status: "completed",
-    startedAt: "Today, 6:40 AM",
-    completedAt: "Today, 7:05 AM",
-    distanceKm: 5.6,
-    cost: 2340,
-    durationMin: 25,
-  },
-  {
-    id: "TRIP-2362",
-    employeeName: "John Doe",
-    riderName: "Grace Ingabire",
-    motorcyclePlate: "RAJ 774M",
-    pickup: "Gisozi",
-    destination: "Kacyiru",
-    status: "completed",
-    startedAt: "Yesterday, 5:10 PM",
-    completedAt: "Yesterday, 5:32 PM",
-    distanceKm: 4.8,
-    cost: 2020,
-    durationMin: 22,
-  },
-  {
-    id: "TRIP-2355",
-    employeeName: "Diane Ishimwe",
-    riderName: "Aline Mukamana",
-    motorcyclePlate: "RAG 551D",
-    pickup: "Nyamirambo",
-    destination: "Remera",
-    status: "cancelled",
-    distanceKm: 0,
-    cost: 0,
-  },
-];
+export const trips: Trip[] = [];
 
 export const incidents: Incident[] = [
   {
@@ -582,38 +506,7 @@ export const alerts: AlertItem[] = [
   },
 ];
 
-export const invoices: Invoice[] = [
-  {
-    id: "inv_1",
-    number: "INV-2026-09",
-    period: "1–16 Sep 2026",
-    trips: 312,
-    amount: 1286400,
-    issuedDate: "16 Sep 2026",
-    dueDate: "30 Sep 2026",
-    status: "pending",
-  },
-  {
-    id: "inv_2",
-    number: "INV-2026-08",
-    period: "1–31 Aug 2026",
-    trips: 540,
-    amount: 2210800,
-    issuedDate: "1 Sep 2026",
-    dueDate: "15 Sep 2026",
-    status: "paid",
-  },
-  {
-    id: "inv_3",
-    number: "INV-2026-07",
-    period: "1–31 Jul 2026",
-    trips: 498,
-    amount: 1984200,
-    issuedDate: "1 Aug 2026",
-    dueDate: "15 Aug 2026",
-    status: "overdue",
-  },
-];
+export const invoices: Invoice[] = [];
 
 export const notifications: NotificationItem[] = [
   {
@@ -674,17 +567,17 @@ export const liveFleetStats = {
 };
 
 export const monthlySpend = [
-  { month: "Apr", amount: 1680000 },
-  { month: "May", amount: 1820000 },
-  { month: "Jun", amount: 1750000 },
-  { month: "Jul", amount: 1984200 },
-  { month: "Aug", amount: 2210800 },
-  { month: "Sep", amount: 1286400 },
+  { month: "Apr", amount: 0 },
+  { month: "May", amount: 0 },
+  { month: "Jun", amount: 0 },
+  { month: "Jul", amount: 0 },
+  { month: "Aug", amount: 0 },
+  { month: "Sep", amount: 0 },
 ];
 
 export const tripsByWeek = [
-  { week: "W1", trips: 98 },
-  { week: "W2", trips: 112 },
-  { week: "W3", trips: 104 },
-  { week: "W4", trips: 86 },
+  { week: "W1", trips: 0 },
+  { week: "W2", trips: 0 },
+  { week: "W3", trips: 0 },
+  { week: "W4", trips: 0 },
 ];

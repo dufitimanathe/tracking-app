@@ -1,10 +1,14 @@
 "use client";
 
-import { Avatar } from "@/components/ui/overlay";
+import { Button } from "@/components/ui/button";
+import { Avatar, Modal } from "@/components/ui/overlay";
 import { LiveIndicator } from "@/components/ui/page-header";
+import { logoutRequest } from "@/lib/api/auth";
+import { clearSession as clearStorage, getRefreshToken } from "@/lib/api/client";
 import { navForRole, roleLabel, type NavItem } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { useAppDispatch, useAppSelector } from "@/store";
+import { clearSession } from "@/store/slices/auth-slice";
 import {
   setNotificationsOpen,
   setSearchOpen,
@@ -13,10 +17,12 @@ import {
 } from "@/store/slices/ui-slice";
 import {
   Bell,
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   Command,
   HelpCircle,
+  LogOut,
   Menu,
   Search,
   Settings,
@@ -25,7 +31,7 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchNotifications } from "@/lib/api/resources";
 import { mapNotification } from "@/lib/api/mappers";
 import type { NotificationItem } from "@/types";
@@ -44,7 +50,10 @@ function NavLink({
 }) {
   const pathname = usePathname();
   const active =
-    item.href === "/admin" || item.href === "/supervisor" || item.href === "/rider"
+    item.href === "/admin" ||
+    item.href === "/supervisor" ||
+    item.href === "/rider" ||
+    item.href === "/accountant"
       ? pathname === item.href
       : pathname === item.href || pathname.startsWith(`${item.href}/`);
   const Icon = item.icon;
@@ -171,6 +180,20 @@ function SidebarContent({
   );
 }
 
+function notificationsPath(role: string) {
+  if (role === "RIDER") return "/rider/notifications";
+  if (role === "SUPERVISOR") return "/supervisor/notifications";
+  if (role === "ACCOUNTANT") return "/accountant/notifications";
+  return "/admin/notifications";
+}
+
+function profilePath(role: string) {
+  if (role === "RIDER") return "/rider/profile";
+  if (role === "SUPERVISOR") return "/supervisor/profile";
+  if (role === "ACCOUNTANT") return "/accountant/profile";
+  return "/admin/settings";
+}
+
 function TopHeader({
   title,
   notifications,
@@ -180,9 +203,45 @@ function TopHeader({
 }) {
   const dispatch = useAppDispatch();
   const router = useRouter();
-  const { userName, avatarInitials, role } = useAppSelector((s) => s.auth);
+  const {
+    userName,
+    userEmail,
+    avatarInitials,
+    role,
+    companyName,
+  } = useAppSelector((s) => s.auth);
   const { notificationsOpen, searchOpen } = useAppSelector((s) => s.ui);
   const unread = notifications.filter((n) => !n.read).length;
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [logoutOpen, setLogoutOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!profileOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!profileRef.current?.contains(event.target as Node)) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [profileOpen]);
+
+  const confirmLogout = async () => {
+    setLoggingOut(true);
+    try {
+      const refresh = getRefreshToken();
+      if (refresh) await logoutRequest(refresh).catch(() => clearStorage());
+      else clearStorage();
+      dispatch(clearSession());
+      setLogoutOpen(false);
+      setProfileOpen(false);
+      router.push("/login");
+    } finally {
+      setLoggingOut(false);
+    }
+  };
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-surface/95 backdrop-blur-sm">
@@ -229,7 +288,10 @@ function TopHeader({
           <button
             type="button"
             className="relative rounded-[8px] p-2 text-text-secondary hover:bg-surface-muted"
-            onClick={() => dispatch(setNotificationsOpen(!notificationsOpen))}
+            onClick={() => {
+              setProfileOpen(false);
+              dispatch(setNotificationsOpen(!notificationsOpen));
+            }}
             aria-label="Notifications"
           >
             <Bell className="size-5" />
@@ -246,13 +308,7 @@ function TopHeader({
                   className="text-xs text-primary font-medium"
                   onClick={() => {
                     dispatch(setNotificationsOpen(false));
-                    router.push(
-                      role === "RIDER"
-                        ? "/rider/notifications"
-                        : role === "SUPERVISOR"
-                          ? "/supervisor/notifications"
-                          : "/admin/notifications",
-                    );
+                    router.push(notificationsPath(role));
                   }}
                 >
                   View all
@@ -288,18 +344,85 @@ function TopHeader({
           ) : null}
         </div>
 
-        <div className="hidden sm:flex items-center gap-2 pl-1 border-l border-border ml-1">
-          <Avatar initials={avatarInitials} size="sm" />
-          <div className="hidden md:block min-w-0">
-            <p className="text-sm font-medium text-text truncate max-w-[120px]">
-              {userName}
-            </p>
-            <p className="text-[11px] text-text-muted">{roleLabel(role)}</p>
-          </div>
+        <div ref={profileRef} className="relative pl-1 border-l border-border ml-1">
+          <button
+            type="button"
+            className="flex items-center gap-2 rounded-[8px] px-1.5 py-1 hover:bg-surface-muted"
+            onClick={() => {
+              dispatch(setNotificationsOpen(false));
+              setProfileOpen((open) => !open);
+            }}
+            aria-expanded={profileOpen}
+            aria-haspopup="menu"
+          >
+            <Avatar initials={avatarInitials} size="sm" />
+            <div className="hidden md:block min-w-0 text-left">
+              <p className="text-sm font-medium text-text truncate max-w-[120px]">
+                {userName}
+              </p>
+              <p className="text-[11px] text-text-muted">{roleLabel(role)}</p>
+            </div>
+            <ChevronDown
+              className={cn(
+                "hidden sm:block size-3.5 text-text-muted transition-transform",
+                profileOpen && "rotate-180",
+              )}
+            />
+          </button>
+
+          {profileOpen ? (
+            <div
+              role="menu"
+              className="absolute right-0 mt-2 w-[min(100vw-1.5rem,18rem)] rounded-[12px] border border-border bg-surface shadow-[var(--shadow-overlay)] overflow-hidden"
+            >
+              <div className="border-b border-border px-4 py-3">
+                <p className="text-sm font-semibold text-text truncate">{userName}</p>
+                <p className="text-xs text-text-secondary mt-0.5 truncate">
+                  {userEmail || "No email on file"}
+                </p>
+              </div>
+              <dl className="px-4 py-3 space-y-2 text-xs border-b border-border">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-text-muted">Role</dt>
+                  <dd className="font-medium text-text text-right">{roleLabel(role)}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-text-muted">Company</dt>
+                  <dd className="font-medium text-text text-right truncate">
+                    {companyName || "—"}
+                  </dd>
+                </div>
+              </dl>
+              <div className="p-2 space-y-1">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="w-full rounded-[8px] px-3 py-2 text-left text-sm text-text-secondary hover:bg-surface-muted hover:text-text"
+                  onClick={() => {
+                    setProfileOpen(false);
+                    router.push(profilePath(role));
+                  }}
+                >
+                  Account details
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="w-full rounded-[8px] px-3 py-2 text-left text-sm text-danger hover:bg-danger-soft inline-flex items-center gap-2"
+                  onClick={() => {
+                    setProfileOpen(false);
+                    setLogoutOpen(true);
+                  }}
+                >
+                  <LogOut className="size-3.5" />
+                  Log out
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
 
-      {/* Session strip */}
       <div className="border-t border-border bg-surface-muted/50 px-3 sm:px-5 py-1.5 flex items-center gap-2">
         <span className="text-[11px] text-text-muted">
           Signed in via API · {roleLabel(role)}
@@ -322,16 +445,43 @@ function TopHeader({
               <X className="size-5" />
             </button>
           </div>
-          <div className="mt-3 space-y-2 text-sm">
-            <p className="text-xs font-semibold text-text-muted uppercase">Motorcycles</p>
-            <p className="text-text">RAE 428C</p>
-            <p className="text-xs font-semibold text-text-muted uppercase pt-1">Riders</p>
-            <p className="text-text">Jean Claude</p>
-            <p className="text-xs font-semibold text-text-muted uppercase pt-1">Trips</p>
-            <p className="text-text">TRIP-2381</p>
-          </div>
         </div>
       ) : null}
+
+      <Modal
+        open={logoutOpen}
+        onClose={() => {
+          if (!loggingOut) setLogoutOpen(false);
+        }}
+        title="Log out?"
+        description="You will need to sign in again to access this workspace."
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={loggingOut}
+              onClick={() => setLogoutOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={loggingOut}
+              leftIcon={<LogOut className="size-3.5" />}
+              onClick={() => void confirmLogout()}
+            >
+              {loggingOut ? "Logging out…" : "Log out"}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-text-secondary">
+          Confirm you want to end your session for{" "}
+          <span className="font-medium text-text">{userName}</span>.
+        </p>
+      </Modal>
     </header>
   );
 }

@@ -1,5 +1,14 @@
+"use client";
+
 import { cn } from "@/lib/utils";
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import { Eye, EyeOff } from "lucide-react";
+import {
+  useState,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
+} from "react";
 
 interface FieldProps {
   label?: string;
@@ -39,6 +48,31 @@ export function Input({
       )}
       {...props}
     />
+  );
+}
+
+export function PasswordInput({
+  className,
+  ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, "type">) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <div className="relative">
+      <Input
+        {...props}
+        type={visible ? "text" : "password"}
+        className={cn("pr-10", className)}
+      />
+      <button
+        type="button"
+        className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded p-1.5 text-text-muted hover:bg-surface-muted hover:text-text"
+        onClick={() => setVisible((v) => !v)}
+        aria-label={visible ? "Hide password" : "Show password"}
+      >
+        {visible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+      </button>
+    </div>
   );
 }
 

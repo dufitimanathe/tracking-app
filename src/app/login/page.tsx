@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Field, Input } from "@/components/ui/input";
+import { Field, Input, PasswordInput } from "@/components/ui/input";
 import {
   companyInitials,
   displayName,
@@ -12,34 +12,44 @@ import {
   persistAuth,
   pickMembership,
 } from "@/lib/api/auth";
+import { isRememberMeEnabled, setRememberMe } from "@/lib/api/client";
 import { homeForRole } from "@/lib/navigation";
 import { useAppDispatch } from "@/store";
 import { setSession } from "@/store/slices/auth-slice";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const search = useSearchParams();
   const dispatch = useAppDispatch();
-  const [email, setEmail] = useState("theodufi.rw@gmail.com");
-  const [password, setPassword] = useState("Password123!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [rememberMe, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRemember(isRememberMeEnabled());
+    const emailFromQuery = search.get("email");
+    if (emailFromQuery) setEmail(emailFromQuery);
+  }, [search]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
+      setRememberMe(rememberMe);
       const auth = await loginRequest({ email, password });
-      persistAuth(auth);
+      persistAuth(auth, null, rememberMe);
       const me = await fetchMe();
       const membership = pickMembership(me.memberships);
       if (!membership) {
         throw new Error("No active company membership for this account.");
       }
-      persistAuth(auth, membership.companyId);
+      persistAuth(auth, membership.companyId, rememberMe);
       dispatch(
         setSession({
           userId: me.user.id,
@@ -53,7 +63,12 @@ export default function LoginPage() {
           membershipId: membership.id,
         }),
       );
-      router.replace(homeForRole(membership.role));
+      const redirect = search.get("redirect");
+      if (redirect && redirect.startsWith("/")) {
+        router.replace(redirect);
+      } else {
+        router.replace(homeForRole(membership.role));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -72,7 +87,7 @@ export default function LoginPage() {
           <div className="mb-6">
             <h1 className="text-xl font-semibold text-text tracking-tight">Sign in</h1>
             <p className="mt-1 text-sm text-text-secondary">
-              Connect to your Nest API workspace
+              Sign in to your company workspace
             </p>
           </div>
 
@@ -88,22 +103,27 @@ export default function LoginPage() {
               />
             </Field>
             <Field label="Password">
-              <Input
-                type="password"
+              <PasswordInput
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
                 required
               />
             </Field>
 
+            <label className="flex items-center gap-2 text-sm text-text-secondary">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRemember(e.target.checked)}
+              />
+              Remember me on this device
+            </label>
+
             {error ? (
               <p className="text-sm text-danger bg-danger-soft rounded-[8px] px-3 py-2">{error}</p>
-            ) : (
-              <p className="text-xs text-text-muted">
-                Seed: theodufi.rw@gmail.com / Password123!
-              </p>
-            )}
+            ) : null}
 
             <div className="flex justify-end">
               <Link
@@ -128,5 +148,19 @@ export default function LoginPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center text-sm text-text-secondary">
+          Loading…
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

@@ -60,6 +60,18 @@ export const supervisorNav: NavItem[] = [
   { label: "Profile", href: "/supervisor/profile", icon: UserCircle },
 ];
 
+/** Accountant: money, trips, requests — no fleet/rider/user admin. */
+export const accountantNav: NavItem[] = [
+  { label: "Overview", href: "/accountant", icon: LayoutDashboard },
+  { label: "Requests", href: "/accountant/requests", icon: ClipboardList },
+  { label: "Trips", href: "/accountant/trips", icon: Activity },
+  { label: "Billing", href: "/accountant/billing", icon: Wallet },
+  { label: "Invoices", href: "/accountant/invoices", icon: Receipt },
+  { label: "Reports", href: "/accountant/reports", icon: FileText },
+  { label: "Notifications", href: "/accountant/notifications", icon: Bell },
+  { label: "Profile", href: "/accountant/profile", icon: UserCircle },
+];
+
 export const riderNav: NavItem[] = [
   { label: "Home", href: "/rider", icon: Home },
   { label: "Trips", href: "/rider/trips", icon: Activity },
@@ -70,12 +82,14 @@ export const riderNav: NavItem[] = [
 
 export function navForRole(role: UserRole): NavItem[] {
   if (role === "SUPERVISOR") return supervisorNav;
+  if (role === "ACCOUNTANT") return accountantNav;
   if (role === "RIDER") return riderNav;
   return adminNav;
 }
 
 export function homeForRole(role: UserRole): string {
   if (role === "SUPERVISOR") return "/supervisor";
+  if (role === "ACCOUNTANT") return "/accountant";
   if (role === "RIDER") return "/rider";
   return "/admin";
 }
@@ -86,6 +100,8 @@ export function roleLabel(role: UserRole): string {
       return "Company Admin";
     case "SUPERVISOR":
       return "Supervisor";
+    case "ACCOUNTANT":
+      return "Accountant";
     case "RIDER":
       return "Rider";
     case "EMPLOYEE":

@@ -3,12 +3,14 @@
 import { Button } from "@/components/ui/button";
 import { Card, MetricCard } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/input";
-import { PageHeader } from "@/components/ui/page-header";
-import { StatusBadge } from "@/components/ui/status-badge";
-import { dashboardStats, trips } from "@/data/mock";
+import { EmptyState, PageHeader } from "@/components/ui/page-header";
+import { mapDashboard } from "@/lib/api/mappers";
+import { fetchDashboard } from "@/lib/api/resources";
 import { cn, formatKm, formatRwf } from "@/lib/utils";
+import { useAppSelector } from "@/store";
+import type { DashboardStats } from "@/types";
 import { Download, FileBarChart } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const categories = [
   {
@@ -33,16 +35,43 @@ const categories = [
   },
 ];
 
-export default function ReportsPage() {
-  const [category, setCategory] = useState("trips");
-  const [from, setFrom] = useState("2026-09-01");
-  const [to, setTo] = useState("2026-09-16");
-  const [department, setDepartment] = useState("all");
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
 
-  const rows = useMemo(() => {
-    if (category === "trips") return trips;
-    return trips.slice(0, 3);
-  }, [category]);
+function monthStartIso() {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+}
+
+export default function ReportsPage() {
+  const companyId = useAppSelector((s) => s.auth.companyId);
+  const [category, setCategory] = useState("trips");
+  const [from, setFrom] = useState(monthStartIso);
+  const [to, setTo] = useState(todayIso);
+  const [department, setDepartment] = useState("all");
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!companyId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const dash = await fetchDashboard(companyId);
+      setStats(mapDashboard(dash));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load reports");
+      setStats(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const selected = categories.find((c) => c.id === category)!;
 
@@ -50,13 +79,17 @@ export default function ReportsPage() {
     <div className="space-y-5 sm:space-y-6 max-w-[1400px] mx-auto">
       <PageHeader
         title="Reports"
-        description="Operational summaries for trips, fleet, cost, and incidents."
+        description="Live operational summaries for trips, fleet, cost, and incidents."
         actions={
-          <Button size="sm" leftIcon={<Download className="size-3.5" />}>
+          <Button size="sm" leftIcon={<Download className="size-3.5" />} disabled>
             Export
           </Button>
         }
       />
+
+      {error ? (
+        <p className="text-sm text-danger bg-danger-soft rounded-[8px] px-3 py-2">{error}</p>
+      ) : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {categories.map((cat) => {
@@ -112,89 +145,31 @@ export default function ReportsPage() {
       </Card>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <MetricCard label="Trips today" value={dashboardStats.tripsToday} accent="primary" />
+        <MetricCard
+          label="Trips today"
+          value={loading ? "—" : (stats?.tripsToday ?? 0)}
+          accent="primary"
+        />
         <MetricCard
           label="Completed"
-          value={dashboardStats.completedToday}
+          value={loading ? "—" : (stats?.completedToday ?? 0)}
           accent="success"
         />
-        <MetricCard label="Distance" value={formatKm(dashboardStats.distanceTodayKm)} />
+        <MetricCard
+          label="Distance"
+          value={loading ? "—" : formatKm(stats?.distanceTodayKm ?? 0)}
+        />
         <MetricCard
           label="Transport cost"
-          value={formatRwf(dashboardStats.transportCostToday)}
+          value={loading ? "—" : formatRwf(stats?.transportCostToday ?? 0)}
         />
       </div>
 
-      <Card padding="none" className="overflow-hidden">
-        <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-text">{selected.title} report</h2>
-            <p className="text-xs text-text-muted mt-0.5">
-              {from} → {to}
-              {department !== "all" ? ` · ${department}` : ""}
-            </p>
-          </div>
-          <Button variant="secondary" size="sm" leftIcon={<Download className="size-3.5" />}>
-            Export CSV
-          </Button>
-        </div>
-
-        <ul className="md:hidden divide-y divide-border">
-          {rows.map((trip) => (
-            <li key={trip.id} className="p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-text">{trip.id}</p>
-                  <p className="text-xs text-text-secondary mt-0.5">
-                    {trip.pickup} → {trip.destination}
-                  </p>
-                </div>
-                <StatusBadge status={trip.status} />
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-text-secondary">
-                <span>{trip.riderName}</span>
-                <span>{formatRwf(trip.cost)}</span>
-                <span>{formatKm(trip.distanceKm)}</span>
-                <span>{trip.employeeName}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
-
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-surface-muted/50 text-left text-xs uppercase tracking-wide text-text-muted">
-                <th className="px-4 py-3 font-medium">Trip</th>
-                <th className="px-4 py-3 font-medium">Employee</th>
-                <th className="px-4 py-3 font-medium">Rider</th>
-                <th className="px-4 py-3 font-medium">Route</th>
-                <th className="px-4 py-3 font-medium">Distance</th>
-                <th className="px-4 py-3 font-medium">Cost</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {rows.map((trip) => (
-                <tr key={trip.id} className="hover:bg-surface-muted/40">
-                  <td className="px-4 py-3 font-medium text-text">{trip.id}</td>
-                  <td className="px-4 py-3 text-text-secondary">{trip.employeeName}</td>
-                  <td className="px-4 py-3 text-text-secondary">{trip.riderName}</td>
-                  <td className="px-4 py-3 text-text-secondary">
-                    {trip.pickup} → {trip.destination}
-                  </td>
-                  <td className="px-4 py-3 text-text-secondary">
-                    {formatKm(trip.distanceKm)}
-                  </td>
-                  <td className="px-4 py-3 font-medium text-text">{formatRwf(trip.cost)}</td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={trip.status} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <Card>
+        <EmptyState
+          title="No detailed report rows"
+          description={`${selected.title} detail tables will appear here when live records exist for ${from} → ${to}.`}
+        />
       </Card>
     </div>
   );

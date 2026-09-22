@@ -1,4 +1,5 @@
-import { apiFetch, clearSession, setStoredCompanyId, setTokens } from '@/lib/api/client';
+import { apiFetch, clearSession, setRememberMe, setStoredCompanyId, setTokens } from '@/lib/api/client';
+import { refreshTokens as refreshTokensRaw } from '@/lib/api/auth-refresh';
 import type { UserRole } from '@/types';
 
 export interface BackendUser {
@@ -81,9 +82,16 @@ export async function fetchMe(): Promise<MeResponse> {
 }
 
 export async function refreshTokens(refreshToken: string): Promise<AuthTokens> {
-  return apiFetch<AuthTokens>(
-    '/auth/refresh',
-    { method: 'POST', body: JSON.stringify({ refreshToken }) },
+  return refreshTokensRaw(refreshToken);
+}
+
+export async function activateAccountRequest(input: {
+  token: string;
+  password: string;
+}): Promise<{ message: string; email?: string | null }> {
+  return apiFetch(
+    '/auth/activate',
+    { method: 'POST', body: JSON.stringify(input) },
     { skipAuth: true },
   );
 }
@@ -99,7 +107,12 @@ export async function logoutRequest(refreshToken: string): Promise<void> {
   }
 }
 
-export function persistAuth(auth: AuthTokens, companyId?: string | null): void {
+export function persistAuth(
+  auth: AuthTokens,
+  companyId?: string | null,
+  rememberMe = true,
+): void {
+  setRememberMe(rememberMe);
   setTokens(auth.accessToken, auth.refreshToken);
   if (companyId) setStoredCompanyId(companyId);
 }
@@ -109,6 +122,7 @@ export function pickMembership(memberships: Membership[]): Membership | null {
   const preferred =
     active.find((m) => m.role === 'COMPANY_ADMIN') ??
     active.find((m) => m.role === 'SUPERVISOR') ??
+    active.find((m) => m.role === 'ACCOUNTANT') ??
     active.find((m) => m.role === 'RIDER') ??
     active[0];
   return preferred ?? null;

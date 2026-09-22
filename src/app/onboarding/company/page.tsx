@@ -14,6 +14,11 @@ import {
 } from "@/lib/api/auth";
 import { updateOnboarding } from "@/lib/api/resources";
 import { clearAdminDraft, loadAdminDraft } from "@/lib/onboarding-draft";
+import {
+  isValidEmail,
+  isValidRwandaPhone,
+  normalizeRwandaPhone,
+} from "@/lib/validation/rwanda";
 import { useAppDispatch } from "@/store";
 import { setSession } from "@/store/slices/auth-slice";
 import { useRouter } from "next/navigation";
@@ -54,10 +59,33 @@ export default function OnboardingCompanyPage() {
     setLoading(true);
     setError(null);
     try {
+      if (form.phone.trim() && !isValidRwandaPhone(form.phone)) {
+        setError("Company phone must be a valid Rwanda mobile (e.g. 0788123456 or +250788123456).");
+        setLoading(false);
+        return;
+      }
+      if (form.email.trim() && !isValidEmail(form.email)) {
+        setError("Enter a valid ops email address.");
+        setLoading(false);
+        return;
+      }
+      if (admin.phone && !isValidRwandaPhone(admin.phone)) {
+        setError("Admin phone on your account draft is invalid. Go back and fix it.");
+        setLoading(false);
+        return;
+      }
+
+      const companyPhone = form.phone.trim()
+        ? normalizeRwandaPhone(form.phone) ?? undefined
+        : undefined;
+      const adminPhone = admin.phone
+        ? normalizeRwandaPhone(admin.phone) ?? undefined
+        : undefined;
+
       const auth = await registerCompanyRequest({
         company: {
           name: form.name.trim(),
-          phone: form.phone.trim() || undefined,
+          phone: companyPhone,
           email: form.email.trim() || undefined,
           address: form.address.trim() || undefined,
           currency: form.currency,
@@ -67,7 +95,7 @@ export default function OnboardingCompanyPage() {
           firstName: admin.firstName,
           lastName: admin.lastName,
           email: admin.email || undefined,
-          phone: admin.phone || undefined,
+          phone: adminPhone,
           password: admin.password,
         },
       });
@@ -126,10 +154,12 @@ export default function OnboardingCompanyPage() {
           />
         </Field>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Phone">
+          <Field label="Phone" hint="Rwanda mobile · 0788… or +250788…">
             <Input
+              type="tel"
               value={form.phone}
               onChange={(e) => update("phone", e.target.value)}
+              placeholder="+250 788 000 000"
               required
             />
           </Field>

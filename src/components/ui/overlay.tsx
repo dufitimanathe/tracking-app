@@ -2,7 +2,14 @@
 
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import { Button } from "./button";
 
 interface DrawerProps {
@@ -194,5 +201,92 @@ export function Avatar({
     >
       {initials}
     </span>
+  );
+}
+
+/**
+ * Menu rendered in a portal so parent overflow (e.g. Card overflow-hidden) cannot clip it.
+ */
+export function FloatingMenu({
+  open,
+  onClose,
+  anchorRef,
+  children,
+  className,
+  width = 208,
+}: {
+  open: boolean;
+  onClose: () => void;
+  anchorRef: React.RefObject<HTMLElement | null>;
+  children: ReactNode;
+  className?: string;
+  width?: number;
+}) {
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open || !anchorRef.current) {
+      setPos(null);
+      return;
+    }
+    const rect = anchorRef.current.getBoundingClientRect();
+    const menuHeight = menuRef.current?.offsetHeight ?? 220;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUp = spaceBelow < menuHeight + 8 && rect.top > menuHeight;
+    const top = openUp ? rect.top - menuHeight - 4 : rect.bottom + 4;
+    const left = Math.min(
+      Math.max(8, rect.right - width),
+      window.innerWidth - width - 8,
+    );
+    setPos({ top, left });
+  }, [open, anchorRef, width]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      const t = e.target as Node;
+      if (menuRef.current?.contains(t)) return;
+      if (anchorRef.current?.contains(t)) return;
+      onClose();
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    function onScroll() {
+      onClose();
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onClose);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onClose);
+    };
+  }, [open, onClose, anchorRef]);
+
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      role="menu"
+      className={cn(
+        "fixed z-[80] rounded-[10px] border border-border bg-surface py-1 shadow-[var(--shadow-overlay)]",
+        className,
+      )}
+      style={{
+        top: pos?.top ?? -9999,
+        left: pos?.left ?? -9999,
+        width,
+        visibility: pos ? "visible" : "hidden",
+      }}
+    >
+      {children}
+    </div>,
+    document.body,
   );
 }
