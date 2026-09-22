@@ -4,13 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
+import { TrackingSettingsCard } from "@/components/settings/tracking-settings-card";
 import { company } from "@/data/mock";
-import { fetchMapsStatus, type MapsStatus } from "@/lib/api/maps";
 import {
   fetchIntegrationsHealth,
   type IntegrationHealth,
 } from "@/lib/api/integrations";
-import { appConfig, isGoogleMapsEnabled } from "@/lib/config";
 import { calculateFare, cn, formatRwf } from "@/lib/utils";
 import { useEffect, useMemo, useState } from "react";
 
@@ -48,30 +47,8 @@ export default function SettingsPage() {
     [pricing.previewKm],
   );
 
-  const [mapsStatus, setMapsStatus] = useState<MapsStatus | null>(null);
-  const [mapsStatusError, setMapsStatusError] = useState<string | null>(null);
   const [integrationsHealth, setIntegrationsHealth] = useState<IntegrationHealth | null>(null);
   const [integrationsError, setIntegrationsError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (section !== "tracking") return;
-    let cancelled = false;
-    void fetchMapsStatus()
-      .then((status) => {
-        if (!cancelled) {
-          setMapsStatus(status);
-          setMapsStatusError(null);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setMapsStatusError(err instanceof Error ? err.message : "Backend unreachable");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [section]);
 
   useEffect(() => {
     if (section !== "integrations") return;
@@ -288,72 +265,7 @@ export default function SettingsPage() {
           ) : null}
 
           {section === "tracking" ? (
-            <Card>
-              <h2 className="text-base font-semibold text-text">Tracking & Maps</h2>
-              <p className="mt-2 text-sm text-text-secondary">
-                Phone-first tracking: riders share location from the mobile app. Hardware GPS is
-                optional. Paste Google Cloud keys when ready — see{" "}
-                <code className="text-xs">backend/docs/GOOGLE_MAPS_SETUP.md</code>.
-              </p>
-
-              <dl className="mt-5 grid gap-3 sm:grid-cols-2 text-sm">
-                <div className="rounded-[10px] border border-border p-3">
-                  <dt className="text-xs uppercase tracking-wide text-text-muted">
-                    Browser Maps JS
-                  </dt>
-                  <dd className="mt-1 font-medium text-text">
-                    {isGoogleMapsEnabled() ? "Key present in frontend env" : "Not set — CSS map fallback"}
-                  </dd>
-                </div>
-                <div className="rounded-[10px] border border-border p-3">
-                  <dt className="text-xs uppercase tracking-wide text-text-muted">
-                    Backend routing
-                  </dt>
-                  <dd className="mt-1 font-medium text-text">
-                    {mapsStatus
-                      ? mapsStatus.googleConfigured
-                        ? `Google (${mapsStatus.provider})`
-                        : "Haversine fallback"
-                      : mapsStatusError ?? "Checking…"}
-                  </dd>
-                </div>
-                <div className="rounded-[10px] border border-border p-3">
-                  <dt className="text-xs uppercase tracking-wide text-text-muted">
-                    Tracking mode
-                  </dt>
-                  <dd className="mt-1 font-medium text-text">
-                    {mapsStatus?.trackingMode ?? "phone_primary"}
-                  </dd>
-                </div>
-                <div className="rounded-[10px] border border-border p-3">
-                  <dt className="text-xs uppercase tracking-wide text-text-muted">
-                    Off-route threshold
-                  </dt>
-                  <dd className="mt-1 font-medium text-text">
-                    {mapsStatus?.routeDeviationThresholdMeters ?? 120} m (for mobile later)
-                  </dd>
-                </div>
-              </dl>
-
-              <div className="mt-5 rounded-[10px] border border-dashed border-border bg-surface-muted/40 p-4 text-sm text-text-secondary space-y-2">
-                <p className="font-medium text-text">Paste slots (your Google project)</p>
-                <p>
-                  Backend: <code className="text-xs">GOOGLE_MAPS_API_KEY=</code> in{" "}
-                  <code className="text-xs">backend/.env</code>
-                </p>
-                <p>
-                  Frontend: <code className="text-xs">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=</code> in{" "}
-                  <code className="text-xs">frontend/.env.local</code>
-                </p>
-                <p>
-                  API base: <code className="text-xs">{appConfig.apiUrl}</code>
-                </p>
-                <p className="text-xs text-text-muted">
-                  Enable Maps JavaScript API, Geocoding API, and Routes API. Create a Map ID under
-                  Map Management for Advanced Markers.
-                </p>
-              </div>
-            </Card>
+            <TrackingSettingsCard />
           ) : null}
 
           {section === "integrations" ? (

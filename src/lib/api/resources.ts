@@ -236,6 +236,9 @@ export interface CompanyDto {
   address?: string | null;
   currency?: string;
   timezone?: string;
+  trackingShareIntervalMinutes?: number;
+  trackingHistoryRetentionDays?: number;
+  trackingKeepDailyLastPingOnly?: boolean;
 }
 
 export interface ReportSummaryDto {
@@ -606,6 +609,26 @@ export function generateInvoice(
 
 export function fetchCompany(companyId: string) {
   return apiFetch<CompanyDto>(`/companies/${companyId}`);
+}
+
+export function updateCompany(
+  companyId: string,
+  body: Partial<{
+    name: string;
+    email: string;
+    phone: string;
+    address: string;
+    timezone: string;
+    currency: string;
+    trackingShareIntervalMinutes: number;
+    trackingHistoryRetentionDays: number;
+    trackingKeepDailyLastPingOnly: boolean;
+  }>,
+) {
+  return apiFetch<CompanyDto>(`/companies/${companyId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
 }
 
 export function updateOnboarding(
