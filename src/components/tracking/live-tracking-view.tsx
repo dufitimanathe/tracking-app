@@ -458,6 +458,10 @@ export function LiveTrackingView({
                   />
                   <Detail label="Presence" value={selectedRider.presence} />
                   <Detail
+                    label="Health"
+                    value={selectedRider.sessionHealth ?? '—'}
+                  />
+                  <Detail
                     label="Last update"
                     value={formatRelativeTime(selectedRider.capturedAt)}
                   />

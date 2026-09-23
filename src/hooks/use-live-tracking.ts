@@ -288,6 +288,10 @@ export function useLiveTracking(companyId?: string) {
             patch.placeName !== undefined
               ? patch.placeName
               : (current?.placeName ?? null),
+          sessionHealth:
+            patch.sessionHealth !== undefined
+              ? patch.sessionHealth
+              : (current?.sessionHealth ?? null),
         };
         return {
           ...prev,

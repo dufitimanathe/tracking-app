@@ -41,6 +41,7 @@ export interface LiveDriverStateDto {
   phone?: string | null;
   plateNumber?: string | null;
   placeName?: string | null;
+  sessionHealth?: 'ACTIVE' | 'STALE' | 'STOPPED' | null;
 }
 
 export interface TrackingCompanyStatsDto {
