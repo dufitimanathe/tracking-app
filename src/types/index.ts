@@ -74,7 +74,12 @@ export type MapStatus =
   | "stopped"
   | "delayed"
   | "offline"
-  | "poor_gps";
+  | "poor_gps"
+  | "gps_excellent"
+  | "gps_acceptable"
+  | "gps_poor"
+  | "gps_very_poor"
+  | "stale";
 
 export interface Motorcycle {
   id: string;
@@ -98,6 +103,8 @@ export interface Motorcycle {
   heading?: number;
   /** Optional live-tracking marker variant (preferred over status for map pins). */
   mapStatus?: MapStatus;
+  /** Reported GPS accuracy radius in meters (live map circle). */
+  accuracyMeters?: number | null;
 }
 
 export interface Rider {

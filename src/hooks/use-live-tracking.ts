@@ -13,14 +13,25 @@ import {
   type TrackingCompanyStatsDto,
 } from '@/lib/api/tracking';
 import { appConfig } from '@/lib/config';
+import {
+  classifyGpsQuality,
+  type GpsQuality,
+} from '@/lib/gps-quality';
 import { useAppSelector } from '@/store';
 
 export type TrackingConnectionState = 'connected' | 'reconnecting' | 'disconnected';
 
-export type LiveMarkerStatus = 'moving' | 'stopped' | 'delayed' | 'offline' | 'poor_gps';
+export type LiveMarkerStatus =
+  | 'moving'
+  | 'stopped'
+  | 'delayed'
+  | 'offline'
+  | 'poor_gps'
+  | 'stale';
 
 export interface LiveRiderState extends LiveDriverStateDto {
   markerStatus: LiveMarkerStatus;
+  gpsQuality: GpsQuality;
   distanceTodayMeters: number;
 }
 
@@ -50,7 +61,6 @@ export interface TrackingLiveStats {
   distanceTodayKm: number;
 }
 
-const POOR_GPS_ACCURACY_M = 50;
 const MAX_POLYLINE_POINTS = 2000;
 const MAX_ACTIVITY = 80;
 const BACKOFF_BASE_MS = 1000;
@@ -61,10 +71,12 @@ function deriveMarkerStatus(state: {
   movementState: string;
   accuracy: number | null;
   speed: number | null;
+  capturedAt?: string;
 }): LiveMarkerStatus {
-  if (state.accuracy != null && state.accuracy > POOR_GPS_ACCURACY_M) {
-    return 'poor_gps';
-  }
+  const quality = classifyGpsQuality(state.accuracy, state.capturedAt);
+  if (quality === 'stale') return 'stale';
+  if (quality === 'very-poor' || quality === 'poor') return 'poor_gps';
+
   const presence = state.presence?.toUpperCase();
   if (presence === 'OFFLINE') return 'offline';
   if (presence === 'DELAYED' || presence === 'STALE') return 'delayed';
@@ -82,6 +94,7 @@ function toLiveRider(
   return {
     ...dto,
     markerStatus: deriveMarkerStatus(dto),
+    gpsQuality: classifyGpsQuality(dto.accuracy, dto.capturedAt),
     distanceTodayMeters: todayMeters,
   };
 }
@@ -149,6 +162,28 @@ export function useLiveTracking(companyId?: string) {
   useEffect(() => {
     followModeRef.current = followMode;
   }, [followMode]);
+
+  // Reclassify GPS quality / stale markers without waiting for the next socket ping.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRiders((prev) => {
+        let changed = false;
+        const next: Record<string, LiveRiderState> = {};
+        for (const [id, rider] of Object.entries(prev)) {
+          const gpsQuality = classifyGpsQuality(rider.accuracy, rider.capturedAt);
+          const markerStatus = deriveMarkerStatus(rider);
+          if (gpsQuality !== rider.gpsQuality || markerStatus !== rider.markerStatus) {
+            changed = true;
+            next[id] = { ...rider, gpsQuality, markerStatus };
+          } else {
+            next[id] = rider;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 5_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const riderStatsCacheRef = useRef(riderStatsCache);
   useEffect(() => {

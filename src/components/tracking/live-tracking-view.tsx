@@ -61,6 +61,14 @@ function markerToFleetStatus(status: LiveMarkerStatus): Motorcycle['status'] {
 
 function riderToMotorcycle(r: LiveRiderState): Motorcycle {
   const kmh = speedKmh(r.speed);
+  const qualityMap = {
+    excellent: 'gps_excellent',
+    acceptable: 'gps_acceptable',
+    poor: 'gps_poor',
+    'very-poor': 'gps_very_poor',
+    stale: 'stale',
+    unknown: r.markerStatus,
+  } as const;
   return {
     id: r.riderId,
     plate: r.plateNumber ?? '—',
@@ -73,10 +81,11 @@ function riderToMotorcycle(r: LiveRiderState): Motorcycle {
     gpsStatus:
       r.markerStatus === 'offline'
         ? 'offline'
-        : r.markerStatus === 'delayed'
+        : r.markerStatus === 'delayed' || r.markerStatus === 'stale'
           ? 'delayed'
           : 'online',
-    mapStatus: r.markerStatus,
+    mapStatus: qualityMap[r.gpsQuality] ?? r.markerStatus,
+    accuracyMeters: r.accuracy,
     riderId: r.riderId,
     riderName: r.riderName ?? undefined,
     location: r.placeName?.trim()
@@ -95,13 +104,14 @@ function riderToMotorcycle(r: LiveRiderState): Motorcycle {
 function statusBadgeTone(status: LiveMarkerStatus) {
   if (status === 'moving') return 'on_trip' as const;
   if (status === 'stopped') return 'waiting' as const;
-  if (status === 'delayed') return 'delayed' as const;
+  if (status === 'delayed' || status === 'stale') return 'delayed' as const;
   if (status === 'poor_gps') return 'warning' as const;
   return 'offline' as const;
 }
 
 function statusLabel(status: LiveMarkerStatus) {
   if (status === 'poor_gps') return 'Poor GPS';
+  if (status === 'stale') return 'Stale';
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 

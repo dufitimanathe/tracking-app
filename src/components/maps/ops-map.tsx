@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, Fragment } from 'react';
 import {
   APIProvider,
   Map,
@@ -21,6 +21,11 @@ export type MapMarkerStatus =
   | 'delayed'
   | 'offline'
   | 'poor_gps'
+  | 'gps_excellent'
+  | 'gps_acceptable'
+  | 'gps_poor'
+  | 'gps_very_poor'
+  | 'stale'
   | 'available'
   | 'assigned'
   | 'on_trip'
@@ -36,6 +41,11 @@ const statusToMarker: Record<string, string> = {
   delayed: 'bg-amber-500 border-amber-800',
   offline: 'bg-slate-400 border-slate-600',
   poor_gps: 'bg-orange-400 border-orange-700',
+  gps_excellent: 'bg-green-500 border-green-800',
+  gps_acceptable: 'bg-blue-500 border-blue-800',
+  gps_poor: 'bg-orange-400 border-orange-700',
+  gps_very_poor: 'bg-red-500 border-red-800',
+  stale: 'bg-slate-400 border-slate-600',
   unauthorized: 'bg-danger border-red-800',
   maintenance: 'bg-slate-500 border-slate-700',
 };
@@ -49,6 +59,11 @@ const pinColors: Record<string, { background: string; border: string }> = {
   delayed: { background: '#f59e0b', border: '#b45309' },
   offline: { background: '#94a3b8', border: '#475569' },
   poor_gps: { background: '#ea580c', border: '#9a3412' },
+  gps_excellent: { background: '#16a34a', border: '#14532d' },
+  gps_acceptable: { background: '#2563eb', border: '#1e3a8a' },
+  gps_poor: { background: '#ea580c', border: '#9a3412' },
+  gps_very_poor: { background: '#dc2626', border: '#7f1d1d' },
+  stale: { background: '#94a3b8', border: '#475569' },
   unauthorized: { background: '#dc2626', border: '#7f1d1d' },
   maintenance: { background: '#64748b', border: '#334155' },
 };
@@ -197,6 +212,41 @@ function RouteOverlay({
   );
 }
 
+function AccuracyCircleOverlay({ motorcycle }: { motorcycle: Motorcycle }) {
+  const map = useMap();
+  const radius = motorcycle.accuracyMeters;
+  const status = resolveMarkerStatus(motorcycle);
+  const colors = pinColors[status] ?? pinColors.offline;
+
+  useEffect(() => {
+    if (!map || radius == null || !Number.isFinite(radius) || radius <= 0) {
+      return;
+    }
+    const circle = new google.maps.Circle({
+      map,
+      center: { lat: motorcycle.lat, lng: motorcycle.lng },
+      radius,
+      fillColor: colors.background,
+      fillOpacity: 0.12,
+      strokeColor: colors.background,
+      strokeOpacity: 0.45,
+      strokeWeight: 1,
+      clickable: false,
+    });
+    return () => {
+      circle.setMap(null);
+    };
+  }, [
+    map,
+    motorcycle.lat,
+    motorcycle.lng,
+    radius,
+    colors.background,
+  ]);
+
+  return null;
+}
+
 function HeadingMarker({
   motorcycle,
   active,
@@ -300,12 +350,14 @@ function GoogleOpsMap({
           <RouteOverlay routePath={routePath} routePolyline={routePolyline} />
 
           {motorcycles.map((m) => (
-            <HeadingMarker
-              key={m.id}
-              motorcycle={m}
-              active={m.id === selectedId}
-              onClick={() => handleClick?.(m)}
-            />
+            <Fragment key={m.id}>
+              <AccuracyCircleOverlay motorcycle={m} />
+              <HeadingMarker
+                motorcycle={m}
+                active={m.id === selectedId}
+                onClick={() => handleClick?.(m)}
+              />
+            </Fragment>
           ))}
 
           <MapCameraController
@@ -474,19 +526,23 @@ function SelectedCard({
         </div>
         <StatusBadge
           status={
-            selected.mapStatus === 'moving'
+            selected.mapStatus === 'moving' || selected.mapStatus === 'gps_acceptable'
               ? 'on_trip'
-              : selected.mapStatus === 'stopped'
-                ? 'waiting'
-                : selected.mapStatus === 'poor_gps'
-                  ? 'warning'
-                  : selected.mapStatus === 'delayed'
-                    ? 'delayed'
-                    : selected.mapStatus === 'offline'
-                      ? 'offline'
-                      : selected.status === 'unauthorized'
-                        ? 'unauthorized'
-                        : selected.status
+              : selected.mapStatus === 'gps_excellent'
+                ? 'available'
+                : selected.mapStatus === 'stopped'
+                  ? 'waiting'
+                  : selected.mapStatus === 'poor_gps' ||
+                      selected.mapStatus === 'gps_poor' ||
+                      selected.mapStatus === 'gps_very_poor'
+                    ? 'warning'
+                    : selected.mapStatus === 'delayed' || selected.mapStatus === 'stale'
+                      ? 'delayed'
+                      : selected.mapStatus === 'offline'
+                        ? 'offline'
+                        : selected.status === 'unauthorized'
+                          ? 'unauthorized'
+                          : selected.status
           }
         />
       </div>
@@ -498,6 +554,11 @@ function SelectedCard({
         <div className="text-text-secondary">
           {selected.speed > 0 ? `${selected.speed} km/h` : 'Stopped'}
         </div>
+        {selected.accuracyMeters != null ? (
+          <div className="text-text-muted col-span-2">
+            Accuracy ±{Math.round(selected.accuracyMeters)} m
+          </div>
+        ) : null}
         <div className="text-text-muted col-span-2">{selected.lastSeen}</div>
       </div>
       <button
@@ -524,11 +585,11 @@ export function OpsMap(props: OpsMapProps) {
 
 export function FleetLegend({ className }: { className?: string }) {
   const items = [
-    { status: 'moving', label: 'Moving' },
-    { status: 'stopped', label: 'Stopped' },
-    { status: 'delayed', label: 'Delayed' },
-    { status: 'offline', label: 'Offline' },
-    { status: 'poor_gps', label: 'Poor GPS' },
+    { status: 'gps_excellent', label: '≤25 m', color: 'bg-green-500' },
+    { status: 'gps_acceptable', label: '26–80 m', color: 'bg-blue-500' },
+    { status: 'gps_poor', label: '81–200 m', color: 'bg-orange-500' },
+    { status: 'gps_very_poor', label: '201–500 m', color: 'bg-red-500' },
+    { status: 'stale', label: 'Stale >30 s', color: 'bg-slate-400' },
   ] as const;
 
   return (
@@ -539,14 +600,7 @@ export function FleetLegend({ className }: { className?: string }) {
           className="inline-flex items-center gap-1.5 text-xs text-text-secondary"
         >
           <span
-            className={cn(
-              'inline-block size-2 rounded-full shrink-0',
-              item.status === 'moving' && 'bg-primary',
-              item.status === 'stopped' && 'bg-amber-500',
-              item.status === 'delayed' && 'bg-warning',
-              item.status === 'offline' && 'bg-slate-400',
-              item.status === 'poor_gps' && 'bg-orange-500',
-            )}
+            className={cn('inline-block size-2 rounded-full shrink-0', item.color)}
           />
           {item.label}
         </span>
